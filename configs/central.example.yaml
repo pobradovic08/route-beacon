@@ -1,0 +1,27 @@
+api:
+  listen_addr: ":8080"
+  write_timeout: 120s
+  read_timeout: 5s
+
+grpc:
+  listen_addr: ":9090"
+
+tls:
+  cert: "/etc/route-beacon/central.pem"
+  key: "/etc/route-beacon/central-key.pem"
+  ca: "/etc/route-beacon/ca.pem"
+
+rate_limit:
+  requests_per_interval: 1
+  interval: 30s
+  cleanup_interval: 1m
+  stale_after: 5m
+
+snapshots:
+  enabled: true
+  directory: "/var/lib/route-beacon/snapshots"
+  interval: 5m
+
+metrics:
+  enabled: true
+  listen_addr: ":9091"

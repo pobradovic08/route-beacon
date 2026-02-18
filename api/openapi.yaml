@@ -1,0 +1,1008 @@
+openapi: 3.0.3
+info:
+  title: BGP Looking Glass API
+  version: 1.0.0
+  description: |
+    Central REST API for the BGP Looking Glass system. Provides route lookups,
+    ping, and traceroute diagnostics from distributed collector nodes, each
+    peering with one or more BGP routers.
+
+    ## Rate Limiting
+
+    Route lookup, ping, and traceroute endpoints share a combined rate limit of
+    **1 request per 30 seconds per client IP address**. When the limit is
+    exceeded the server returns `429 Too Many Requests` with a `Retry-After`
+    header indicating how many seconds the client must wait.
+
+    ## Streaming (SSE)
+
+    Ping and traceroute endpoints return Server-Sent Events (`text/event-stream`).
+    Each SSE message carries a JSON payload in its `data:` field and a typed
+    `event:` field. The stream always ends with a `complete` event.
+
+    ## Error Format
+
+    All error responses use RFC 7807 Problem Details (`application/problem+json`).
+
+  contact:
+    name: Route Beacon
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  # --------------------------------------------------------------------------
+  # Health
+  # --------------------------------------------------------------------------
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns the overall health of the central API and a summary of connected collectors.
+      tags: [health]
+      responses:
+        "200":
+          description: System is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: healthy
+                collector_count: 5
+                connected_collectors: 4
+                total_routes: 20000000
+                uptime_seconds: 86400
+        "503":
+          description: System is degraded or unavailable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  # --------------------------------------------------------------------------
+  # Collectors
+  # --------------------------------------------------------------------------
+  /api/v1/collectors:
+    get:
+      operationId: listCollectors
+      summary: List all collectors
+      description: Returns every registered collector with its current connection status and the number of router sessions (LG targets) it serves.
+      tags: [collectors]
+      responses:
+        "200":
+          description: Collector list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Collector"
+              example:
+                data:
+                  - id: "col-fra-01"
+                    location: "Frankfurt, DE"
+                    status: online
+                    router_count: 4
+                  - id: "col-ams-01"
+                    location: "Amsterdam, NL"
+                    status: offline
+                    router_count: 2
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # LG Targets
+  # --------------------------------------------------------------------------
+  /api/v1/targets:
+    get:
+      operationId: listTargets
+      summary: List all LG targets
+      description: |
+        Returns every LG target (router session) across all collectors.
+        Optionally filter by collector ID.
+      tags: [targets]
+      parameters:
+        - name: collector_id
+          in: query
+          required: false
+          description: Filter targets to those belonging to this collector.
+          schema:
+            type: string
+          example: "col-fra-01"
+      responses:
+        "200":
+          description: Target list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LGTarget"
+              example:
+                data:
+                  - id: "tgt-fra-core1"
+                    collector:
+                      id: "col-fra-01"
+                      location: "Frankfurt, DE"
+                    display_name: "Frankfurt Core 1"
+                    asn: 64512
+                    status: up
+                    last_update: "2026-02-18T12:34:56Z"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/targets/{targetId}:
+    get:
+      operationId: getTarget
+      summary: Get a single LG target
+      description: Returns full details for one LG target, including collector info, session status, and data freshness.
+      tags: [targets]
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: Target details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/LGTarget"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Route Lookup
+  # --------------------------------------------------------------------------
+  /api/v1/targets/{targetId}/routes/lookup:
+    get:
+      operationId: lookupRoutes
+      summary: Look up routes for a prefix
+      description: |
+        Returns all BGP paths the selected LG target holds for the given prefix.
+
+        **Match behaviour**: when `match_type` is omitted the server auto-detects
+        based on the input. A CIDR prefix (e.g. `8.8.8.0/24`) triggers an exact
+        match; a bare IP address (e.g. `8.8.8.8`) triggers a longest-prefix match.
+
+        **Rate limited** -- shares the global 1 req / 30 s / client IP budget with
+        ping and traceroute.
+      tags: [routes]
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+        - name: prefix
+          in: query
+          required: true
+          description: |
+            IPv4 or IPv6 prefix in CIDR notation (e.g. `8.8.8.0/24`,
+            `2001:db8::/32`) or a bare IP address for longest-prefix match.
+          schema:
+            type: string
+          examples:
+            cidr_v4:
+              summary: IPv4 CIDR prefix (exact match)
+              value: "8.8.8.0/24"
+            bare_ip_v4:
+              summary: Bare IPv4 address (longest-prefix match)
+              value: "8.8.8.8"
+            cidr_v6:
+              summary: IPv6 CIDR prefix (exact match)
+              value: "2001:db8::/32"
+        - name: match_type
+          in: query
+          required: false
+          description: |
+            Force a specific match type. When omitted the server auto-detects
+            based on whether the input includes a prefix length.
+          schema:
+            type: string
+            enum: [exact, longest]
+      responses:
+        "200":
+          description: Route lookup results.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteLookupResponse"
+              example:
+                prefix: "8.8.8.0/24"
+                target:
+                  id: "tgt-fra-core1"
+                  display_name: "Frankfurt Core 1"
+                  asn: 64512
+                paths:
+                  - best: true
+                    as_path: [15169]
+                    next_hop: "198.51.100.1"
+                    origin: igp
+                    med: 0
+                    local_pref: 100
+                    communities:
+                      - type: standard
+                        value: "64512:100"
+                    extended_communities: []
+                    large_communities: []
+                    aggregator: null
+                    atomic_aggregate: false
+                plain_text: |
+                  BGP routing table entry for 8.8.8.0/24
+                  Target: Frankfurt Core 1 (AS64512)
+
+                  Path #1 (best)
+                    AS Path: 15169
+                    Next Hop: 198.51.100.1
+                    Origin: IGP
+                    MED: 0
+                    Local Pref: 100
+                    Communities: 64512:100
+                meta:
+                  match_type: exact
+                  data_updated_at: "2026-02-18T12:34:56Z"
+                  stale: false
+                  collector_status: online
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  # --------------------------------------------------------------------------
+  # Ping
+  # --------------------------------------------------------------------------
+  /api/v1/targets/{targetId}/ping:
+    post:
+      operationId: ping
+      summary: Ping from a collector
+      description: |
+        Executes a ping from the collector that owns the given LG target and
+        streams results back as Server-Sent Events.
+
+        ### SSE event types
+
+        | event | payload |
+        |-------|---------|
+        | `reply` | `{ "seq": 1, "rtt_ms": 12.34, "ttl": 56, "success": true }` |
+        | `summary` | `{ "packets_sent": 5, "packets_received": 5, "loss_pct": 0, "rtt_min_ms": 10.1, "rtt_avg_ms": 12.3, "rtt_max_ms": 15.0 }` |
+        | `error` | `{ "code": "...", "message": "..." }` |
+        | `complete` | `{}` |
+
+        **Rate limited** -- shares the global 1 req / 30 s / client IP budget.
+      tags: [diagnostics]
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PingRequest"
+            example:
+              destination: "8.8.8.8"
+              count: 5
+              timeout_ms: 5000
+      responses:
+        "200":
+          description: |
+            SSE stream of ping results. The response body is a series of
+            Server-Sent Events, not a single JSON object.
+          content:
+            text/event-stream:
+              schema:
+                description: |
+                  Server-Sent Events stream. Each message has an `event` field
+                  (one of `reply`, `summary`, `error`, `complete`) and a `data`
+                  field containing a JSON object. See operation description for
+                  payload schemas.
+                type: string
+              example: |
+                event: reply
+                data: {"seq":1,"rtt_ms":12.34,"ttl":56,"success":true}
+
+                event: reply
+                data: {"seq":2,"rtt_ms":11.02,"ttl":56,"success":true}
+
+                event: summary
+                data: {"packets_sent":2,"packets_received":2,"loss_pct":0,"rtt_min_ms":11.02,"rtt_avg_ms":11.68,"rtt_max_ms":12.34}
+
+                event: complete
+                data: {}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  # --------------------------------------------------------------------------
+  # Traceroute
+  # --------------------------------------------------------------------------
+  /api/v1/targets/{targetId}/traceroute:
+    post:
+      operationId: traceroute
+      summary: Traceroute from a collector
+      description: |
+        Executes a traceroute from the collector that owns the given LG target
+        and streams results back as Server-Sent Events. Hop addresses are raw
+        IPs (no DNS resolution).
+
+        ### SSE event types
+
+        | event | payload |
+        |-------|---------|
+        | `hop` | `{ "hop_number": 1, "address": "198.51.100.1", "rtt_ms": [12.3, 11.8, 13.1] }` |
+        | `error` | `{ "code": "...", "message": "..." }` |
+        | `complete` | `{ "reached_destination": true }` |
+
+        A hop with `"address": "*"` and empty `rtt_ms` indicates a
+        non-responding hop.
+
+        **Rate limited** -- shares the global 1 req / 30 s / client IP budget.
+      tags: [diagnostics]
+      parameters:
+        - $ref: "#/components/parameters/TargetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TracerouteRequest"
+            example:
+              destination: "8.8.8.8"
+              max_hops: 30
+              timeout_ms: 5000
+      responses:
+        "200":
+          description: |
+            SSE stream of traceroute hops. The response body is a series of
+            Server-Sent Events, not a single JSON object.
+          content:
+            text/event-stream:
+              schema:
+                description: |
+                  Server-Sent Events stream. Each message has an `event` field
+                  (one of `hop`, `error`, `complete`) and a `data` field
+                  containing a JSON object. See operation description for
+                  payload schemas.
+                type: string
+              example: |
+                event: hop
+                data: {"hop_number":1,"address":"198.51.100.1","rtt_ms":[12.3,11.8,13.1]}
+
+                event: hop
+                data: {"hop_number":2,"address":"203.0.113.5","rtt_ms":[22.1,21.9,23.0]}
+
+                event: hop
+                data: {"hop_number":3,"address":"*","rtt_ms":[]}
+
+                event: hop
+                data: {"hop_number":4,"address":"8.8.8.8","rtt_ms":[30.2,29.8,31.0]}
+
+                event: complete
+                data: {"reached_destination":true}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimitError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+# ==========================================================================
+# Components
+# ==========================================================================
+components:
+  # --------------------------------------------------------------------------
+  # Parameters
+  # --------------------------------------------------------------------------
+  parameters:
+    TargetId:
+      name: targetId
+      in: path
+      required: true
+      description: Unique identifier of the LG target (router session).
+      schema:
+        type: string
+      example: "tgt-fra-core1"
+
+  # --------------------------------------------------------------------------
+  # Headers
+  # --------------------------------------------------------------------------
+  headers:
+    RetryAfter:
+      description: |
+        Number of seconds the client should wait before retrying. Present on
+        429 responses and optionally on successful rate-limited responses to
+        indicate remaining cooldown.
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+
+  # --------------------------------------------------------------------------
+  # Schemas
+  # --------------------------------------------------------------------------
+  schemas:
+    # -- Health --------------------------------------------------------------
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - collector_count
+        - connected_collectors
+        - total_routes
+        - uptime_seconds
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          description: Overall system health.
+        collector_count:
+          type: integer
+          description: Total number of registered collectors.
+        connected_collectors:
+          type: integer
+          description: Number of collectors currently connected.
+        total_routes:
+          type: integer
+          description: Sum of routes across all LG targets.
+        uptime_seconds:
+          type: integer
+          description: Seconds since the central API process started.
+
+    # -- Collector -----------------------------------------------------------
+    Collector:
+      type: object
+      required:
+        - id
+        - location
+        - status
+        - router_count
+      properties:
+        id:
+          type: string
+          description: Unique collector identifier.
+        location:
+          type: string
+          description: Human-readable location name (e.g. "Frankfurt, DE").
+        status:
+          type: string
+          enum: [online, offline]
+          description: Current connection status of the collector.
+        router_count:
+          type: integer
+          description: Number of LG targets (router sessions) at this collector.
+
+    # -- LG Target -----------------------------------------------------------
+    CollectorSummary:
+      type: object
+      required:
+        - id
+        - location
+      properties:
+        id:
+          type: string
+        location:
+          type: string
+      description: Abbreviated collector reference embedded in target objects.
+
+    LGTarget:
+      type: object
+      required:
+        - id
+        - collector
+        - display_name
+        - asn
+        - status
+        - last_update
+      properties:
+        id:
+          type: string
+          description: Unique LG target identifier.
+        collector:
+          $ref: "#/components/schemas/CollectorSummary"
+        display_name:
+          type: string
+          description: Operator-assigned name (e.g. "Frankfurt Core 1").
+        asn:
+          type: integer
+          description: Autonomous System Number of the router.
+        status:
+          type: string
+          enum: [up, down, unknown]
+          description: BGP session status.
+        last_update:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent route data received from this target.
+
+    # -- BGP Path ------------------------------------------------------------
+    Community:
+      type: object
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          enum: [standard, extended, large]
+          description: Community encoding type.
+        value:
+          type: string
+          description: |
+            Human-readable community string.
+            Standard: "ASN:value" (e.g. "64512:100").
+            Extended: "type:admin:assigned" (e.g. "rt:64512:1000").
+            Large: "global:local1:local2" (e.g. "64512:1:2").
+
+    BGPPath:
+      type: object
+      required:
+        - best
+        - as_path
+        - next_hop
+        - origin
+        - communities
+        - extended_communities
+        - large_communities
+        - atomic_aggregate
+      properties:
+        best:
+          type: boolean
+          description: |
+            True if this is the best path as exported by the router to the
+            looking glass session.
+        as_path:
+          type: array
+          items:
+            type: integer
+          description: Ordered list of AS numbers in the path (origin AS last).
+        next_hop:
+          type: string
+          description: Next-hop IP address.
+        origin:
+          type: string
+          enum: [igp, egp, incomplete]
+          description: BGP origin attribute.
+        med:
+          type: integer
+          nullable: true
+          description: Multi-Exit Discriminator. Null if not present.
+        local_pref:
+          type: integer
+          nullable: true
+          description: Local Preference. Null if not present (e.g. eBGP-learned).
+        communities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Community"
+          description: Standard BGP communities.
+        extended_communities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Community"
+          description: Extended BGP communities (route targets, etc.).
+        large_communities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Community"
+          description: Large BGP communities (RFC 8092).
+        aggregator:
+          type: object
+          nullable: true
+          properties:
+            asn:
+              type: integer
+            address:
+              type: string
+          description: Aggregator attribute. Null if not present.
+        atomic_aggregate:
+          type: boolean
+          description: Whether the atomic-aggregate attribute is set.
+
+    # -- Route Lookup Response -----------------------------------------------
+    TargetSummary:
+      type: object
+      required:
+        - id
+        - display_name
+        - asn
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        asn:
+          type: integer
+      description: Abbreviated target reference embedded in route lookup results.
+
+    RouteLookupMeta:
+      type: object
+      required:
+        - match_type
+        - data_updated_at
+        - stale
+        - collector_status
+      properties:
+        match_type:
+          type: string
+          enum: [exact, longest]
+          description: The match type that was actually applied.
+        data_updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the most recent route data update for this target.
+        stale:
+          type: boolean
+          description: True if the data may be outdated due to collector disconnection.
+        collector_status:
+          type: string
+          enum: [online, offline]
+          description: Current connection status of the collector serving this target.
+
+    RouteLookupResponse:
+      type: object
+      required:
+        - prefix
+        - target
+        - paths
+        - plain_text
+        - meta
+      properties:
+        prefix:
+          type: string
+          description: The matched prefix in CIDR notation.
+        target:
+          $ref: "#/components/schemas/TargetSummary"
+        paths:
+          type: array
+          items:
+            $ref: "#/components/schemas/BGPPath"
+          description: All BGP paths for the matched prefix on this target.
+        plain_text:
+          type: string
+          description: Pre-formatted plain-text rendering of the results, suitable for copy-to-clipboard.
+        meta:
+          $ref: "#/components/schemas/RouteLookupMeta"
+
+    # -- Diagnostic Requests -------------------------------------------------
+    PingRequest:
+      type: object
+      required:
+        - destination
+      properties:
+        destination:
+          type: string
+          description: IPv4 or IPv6 destination address.
+        count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+          description: Number of ICMP echo requests to send.
+        timeout_ms:
+          type: integer
+          minimum: 1000
+          maximum: 10000
+          default: 5000
+          description: Per-packet timeout in milliseconds.
+
+    TracerouteRequest:
+      type: object
+      required:
+        - destination
+      properties:
+        destination:
+          type: string
+          description: IPv4 or IPv6 destination address.
+        max_hops:
+          type: integer
+          minimum: 1
+          maximum: 64
+          default: 30
+          description: Maximum number of hops.
+        timeout_ms:
+          type: integer
+          minimum: 1000
+          maximum: 10000
+          default: 5000
+          description: Per-hop timeout in milliseconds.
+
+    # -- SSE Event Payloads (documented for codegen / client reference) ------
+    PingReplyEvent:
+      type: object
+      required:
+        - seq
+        - rtt_ms
+        - ttl
+        - success
+      properties:
+        seq:
+          type: integer
+          description: ICMP sequence number.
+        rtt_ms:
+          type: number
+          format: double
+          description: Round-trip time in milliseconds. Zero if the packet was lost.
+        ttl:
+          type: integer
+          description: IP TTL of the reply packet. Zero if the packet was lost.
+        success:
+          type: boolean
+          description: True if an echo reply was received.
+
+    PingSummaryEvent:
+      type: object
+      required:
+        - packets_sent
+        - packets_received
+        - loss_pct
+        - rtt_min_ms
+        - rtt_avg_ms
+        - rtt_max_ms
+      properties:
+        packets_sent:
+          type: integer
+        packets_received:
+          type: integer
+        loss_pct:
+          type: number
+          format: double
+          description: Packet loss percentage (0-100).
+        rtt_min_ms:
+          type: number
+          format: double
+        rtt_avg_ms:
+          type: number
+          format: double
+        rtt_max_ms:
+          type: number
+          format: double
+
+    TracerouteHopEvent:
+      type: object
+      required:
+        - hop_number
+        - address
+        - rtt_ms
+      properties:
+        hop_number:
+          type: integer
+          description: Hop number (1-based, incrementing from source).
+        address:
+          type: string
+          description: |
+            IP address of the responding node. "*" if the hop did not respond.
+        rtt_ms:
+          type: array
+          items:
+            type: number
+            format: double
+          description: |
+            Round-trip times for each probe at this hop. Empty array if the hop
+            did not respond.
+
+    TracerouteCompleteEvent:
+      type: object
+      required:
+        - reached_destination
+      properties:
+        reached_destination:
+          type: boolean
+          description: True if the traceroute reached the destination before max hops.
+
+    SSEErrorEvent:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code.
+        message:
+          type: string
+          description: Human-readable error description.
+
+    # -- Error Responses (RFC 7807) ------------------------------------------
+    ProblemDetail:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            A URI reference that identifies the problem type. "about:blank" when
+            no further semantics beyond the status code are needed.
+          default: "about:blank"
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri
+          description: URI reference identifying this specific occurrence.
+
+    RateLimitError:
+      description: |
+        Returned when the client has exceeded the rate limit. Extends
+        ProblemDetail with a `retry_after` field.
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetail"
+        - type: object
+          required:
+            - retry_after
+          properties:
+            retry_after:
+              type: integer
+              description: Seconds the client must wait before the next request.
+
+    ValidationError:
+      description: |
+        Returned when request parameters fail validation. Extends ProblemDetail
+        with an `invalid_params` array.
+      allOf:
+        - $ref: "#/components/schemas/ProblemDetail"
+        - type: object
+          required:
+            - invalid_params
+          properties:
+            invalid_params:
+              type: array
+              items:
+                type: object
+                required:
+                  - name
+                  - reason
+                properties:
+                  name:
+                    type: string
+                    description: Name of the invalid parameter.
+                  reason:
+                    type: string
+                    description: Why the parameter is invalid.
+
+  # --------------------------------------------------------------------------
+  # Reusable Responses
+  # --------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: Bad Request
+            status: 400
+            detail: "Request body is not valid JSON."
+
+    NotFound:
+      description: The requested resource does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: Not Found
+            status: 404
+            detail: "LG target 'tgt-xxx' does not exist."
+
+    ValidationError:
+      description: One or more request parameters are invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+          example:
+            type: "about:blank"
+            title: Unprocessable Entity
+            status: 422
+            detail: "Request validation failed."
+            invalid_params:
+              - name: destination
+                reason: "Address 192.168.1.1 is in a restricted private range (RFC 1918)."
+              - name: count
+                reason: "Must be between 1 and 10."
+
+    RateLimitError:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/RateLimitError"
+          example:
+            type: "about:blank"
+            title: Too Many Requests
+            status: 429
+            detail: "Rate limit exceeded. Try again in 24 seconds."
+            retry_after: 24
+
+    InternalError:
+      description: An unexpected server error occurred.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: Internal Server Error
+            status: 500
+            detail: "An unexpected error occurred. Please try again later."
+
+    ServiceUnavailable:
+      description: |
+        The target's collector is currently offline or the system is degraded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetail"
+          example:
+            type: "about:blank"
+            title: Service Unavailable
+            status: 503
+            detail: "Collector 'col-fra-01' is currently offline."
+
+tags:
+  - name: health
+    description: System health and status.
+  - name: collectors
+    description: Collector (data center location) management.
+  - name: targets
+    description: LG target (router session) browsing and details.
+  - name: routes
+    description: BGP route lookup.
+  - name: diagnostics
+    description: Ping and traceroute from collector vantage points.
