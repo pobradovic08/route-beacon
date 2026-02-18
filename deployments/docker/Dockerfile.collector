@@ -1,0 +1,40 @@
+# ---- Build stage ----
+FROM golang:1.25 AS builder
+
+WORKDIR /src
+
+# Cache module downloads
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy full source tree and build
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/collector ./cmd/collector
+
+# ---- Runtime stage ----
+# Using debian:bookworm-slim because the collector shells out to ping and
+# traceroute for diagnostic commands. Distroless images do not include these
+# tools.
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        iputils-ping \
+        traceroute \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/collector /usr/local/bin/collector
+
+# TLS certificates are expected to be mounted at runtime:
+#   /etc/route-beacon/collector.pem
+#   /etc/route-beacon/collector-key.pem
+#   /etc/route-beacon/ca.pem
+# Mount the configuration file at:
+#   /etc/route-beacon/collector.yaml
+
+# The collector connects outbound to central via gRPC and does not listen on
+# any port by default. Expose a health-check port if configured in future.
+
+ENTRYPOINT ["collector"]
+CMD ["-config", "/etc/route-beacon/collector.yaml"]
