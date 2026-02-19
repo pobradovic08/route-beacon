@@ -90,6 +90,12 @@ type BGPPath struct {
 	// looking glass session.
 	Best bool `json:"best"`
 
+	// Filtered Path was denied by an inbound or outbound route policy.
+	Filtered bool `json:"filtered"`
+
+	// Stale Path was not refreshed after a graceful restart.
+	Stale bool `json:"stale"`
+
 	// Communities Standard BGP communities.
 	Communities []Community `json:"communities"`
 

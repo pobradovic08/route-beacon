@@ -36,27 +36,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── AppShell chrome ── */
-.mantine-AppShell-root {
-  max-width: 960px;
-  margin: 0 auto;
-}
-
-.mantine-AppShell-header,
-.mantine-AppShell-footer {
-  position: sticky !important;
-  width: 100% !important;
-  left: auto !important;
-  right: auto !important;
-}
-
-.mantine-AppShell-header {
-  border-bottom: none !important;
-}
-
-.mantine-AppShell-footer {
-  border-top: none !important;
-}
 
 /* ── Inputs ── */
 .mantine-Select-input {

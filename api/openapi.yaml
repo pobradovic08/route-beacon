@@ -576,6 +576,8 @@ components:
       type: object
       required:
         - best
+        - filtered
+        - stale
         - as_path
         - next_hop
         - origin
@@ -589,6 +591,12 @@ components:
           description: |
             True if this is the best path as exported by the router to the
             looking glass session.
+        filtered:
+          type: boolean
+          description: Path was denied by an inbound or outbound route policy.
+        stale:
+          type: boolean
+          description: Path was not refreshed after a graceful restart.
         as_path:
           type: array
           items:

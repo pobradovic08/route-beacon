@@ -27,6 +27,8 @@ type RouteEvent struct {
 func ConvertPath(p *apipb.Path) (model.BGPPath, error) {
 	bgpPath := model.BGPPath{
 		IsBest:     p.Best,
+		IsFiltered: p.Filtered,
+		IsStale:    p.Stale,
 		PathID:     p.Identifier,
 		ReceivedAt: time.Now(),
 	}
