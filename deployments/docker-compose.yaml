@@ -3,6 +3,8 @@
 # Usage:
 #   docker compose -f deployments/docker-compose.yaml up --build
 #
+
+name: route-beacon
 # Services:
 #   cert-init   - One-shot init container that generates self-signed mTLS certs
 #   central     - Central API + gRPC server
