@@ -1,0 +1,19 @@
+:root {
+  --rb-border: #e2e8f0;
+  --rb-canvas: #f8fafc;
+  --rb-surface: #ffffff;
+  --rb-muted: #64748b;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--rb-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

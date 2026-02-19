@@ -8,11 +8,13 @@ name: route-beacon
 # Services:
 #   cert-init   - One-shot init container that generates self-signed mTLS certs
 #   central     - Central API + gRPC server
+#   web         - React frontend (nginx) proxying to central
 #   collector   - Collector that connects to central via gRPC
 #   bgp-router1 - FRR BGP router (AS 65001) announcing test prefixes
 #   bgp-router2 - FRR BGP router (AS 65002) announcing test prefixes
 #
-# The API is exposed on http://localhost:8080.
+# The frontend is exposed on http://localhost:3040.
+# The API is also exposed directly on http://localhost:8080.
 #
 # Network layout (172.28.0.0/24):
 #   central      172.28.0.2
@@ -57,6 +59,20 @@ services:
     networks:
       bgpnet:
         ipv4_address: 172.28.0.2
+
+  # ---------- Web frontend ----------
+  web:
+    build:
+      context: ../
+      dockerfile: deployments/docker/Dockerfile.web
+    depends_on:
+      central:
+        condition: service_started
+    ports:
+      - "3040:3000"
+    restart: unless-stopped
+    networks:
+      bgpnet:
 
   # ---------- Collector ----------
   collector:
