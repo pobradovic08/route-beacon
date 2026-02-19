@@ -60,16 +60,19 @@ services:
       bgpnet:
         ipv4_address: 172.28.0.2
 
-  # ---------- Web frontend ----------
+  # ---------- Web frontend (Vite dev server with HMR) ----------
   web:
-    build:
-      context: ../
-      dockerfile: deployments/docker/Dockerfile.web
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
     depends_on:
       central:
         condition: service_started
     ports:
       - "3040:3000"
+    volumes:
+      - ../web:/app
+      - web_node_modules:/app/node_modules
     restart: unless-stopped
     networks:
       bgpnet:
@@ -141,4 +144,6 @@ networks:
 
 volumes:
   certs:
+    driver: local
+  web_node_modules:
     driver: local

@@ -25,6 +25,27 @@ interface TraceroutePanelProps {
   targetId: string | null;
 }
 
+const tableStyles = {
+  td: {
+    fontFamily: "var(--mantine-font-family-monospace)",
+    fontSize: "var(--mantine-font-size-sm)",
+  },
+  th: {
+    fontSize: "var(--mantine-font-size-xs)",
+    fontWeight: 700,
+    color: "var(--rb-muted)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    borderBottomColor: "var(--rb-border)",
+  },
+};
+
+const cardStyle = {
+  border: "1px solid var(--rb-border)",
+  boxShadow: "var(--rb-shadow-sm)",
+  background: "var(--rb-surface)",
+};
+
 export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
   const [destination, setDestination] = useState("");
   const [maxHops, setMaxHops] = useState<number>(30);
@@ -86,17 +107,22 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
   };
 
   return (
-    <Stack gap="md">
+    <Stack gap="lg">
+      <Text size="xs" fw={400} style={{ color: "var(--rb-muted)" }}>
+        Trace the network path to a destination, showing each hop along the way.
+      </Text>
       <Group gap="sm" align="flex-end">
         <TextInput
-          placeholder="8.8.8.8 or 2001:4860:4860::8888"
+          placeholder="192.0.2.1 or 2001:db8::1"
           label="Destination"
           value={destination}
           onChange={(e) => setDestination(e.currentTarget.value)}
           onKeyDown={(e) => e.key === "Enter" && !running && handleStart()}
           disabled={!targetId || running}
           style={{ flex: 1 }}
-          styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
+          styles={{
+            input: { fontFamily: "var(--mantine-font-family-monospace)" },
+          }}
         />
         <NumberInput
           label="Max Hops"
@@ -113,6 +139,7 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
             variant="light"
             onClick={handleStop}
             leftSection={<IconPlayerStop size={16} />}
+            w={120}
           >
             Stop
           </Button>
@@ -121,6 +148,7 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
             onClick={handleStart}
             disabled={!targetId || !destination.trim()}
             leftSection={<IconPlayerPlay size={16} />}
+            w={120}
           >
             Trace
           </Button>
@@ -132,33 +160,20 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
           color="red"
           variant="light"
           icon={<IconAlertTriangle size={16} />}
+          radius="lg"
         >
-          <Text size="xs" ff="monospace">
+          <Text size="sm" fw={500} ff="monospace">
             {error}
           </Text>
         </Alert>
       )}
 
       {(hops.length > 0 || running) && (
-        <Card
-          withBorder
-          padding="md"
-          style={{ borderColor: "var(--rb-border)" }}
-        >
+        <Card padding="xl" style={cardStyle}>
           <Table
             horizontalSpacing="sm"
-            verticalSpacing="xs"
-            styles={{
-              td: {
-                fontFamily: "var(--mantine-font-family-monospace)",
-                fontSize: "var(--mantine-font-size-xs)",
-              },
-              th: {
-                fontSize: "var(--mantine-font-size-xs)",
-                fontWeight: 600,
-                color: "var(--rb-muted)",
-              },
-            }}
+            verticalSpacing={12}
+            styles={tableStyles}
           >
             <Table.Thead>
               <Table.Tr>
@@ -171,32 +186,40 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
               {hops.map((hop) => (
                 <Table.Tr key={hop.hop_number}>
                   <Table.Td>
-                    <Text size="xs" fw={600} ff="monospace">
+                    <Text size="sm" fw={600} ff="monospace">
                       {hop.hop_number}
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    {hop.address === "*" ? (
-                      <Text size="xs" c="dimmed" ff="monospace">
-                        * * *
-                      </Text>
-                    ) : (
-                      <Text size="xs" ff="monospace">
-                        {hop.address}
-                      </Text>
-                    )}
+                    <Text
+                      size="sm"
+                      fw={500}
+                      ff="monospace"
+                      style={
+                        hop.address === "*"
+                          ? { color: "var(--rb-muted)" }
+                          : undefined
+                      }
+                    >
+                      {hop.address === "*" ? "* * *" : hop.address}
+                    </Text>
                   </Table.Td>
                   <Table.Td>
                     {hop.rtt_ms.length > 0 ? (
                       <Group gap="sm">
                         {hop.rtt_ms.map((rtt, i) => (
-                          <Text key={i} size="xs" ff="monospace">
+                          <Text key={i} size="sm" fw={500} ff="monospace">
                             {rtt.toFixed(2)}
                           </Text>
                         ))}
                       </Group>
                     ) : (
-                      <Text size="xs" c="dimmed" ff="monospace">
+                      <Text
+                        size="sm"
+                        fw={500}
+                        ff="monospace"
+                        style={{ color: "var(--rb-muted)" }}
+                      >
                         *
                       </Text>
                     )}
@@ -206,9 +229,13 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
               {running && (
                 <Table.Tr>
                   <Table.Td colSpan={3}>
-                    <Group gap="xs" py="xs">
-                      <Loader size="xs" color="teal" />
-                      <Text size="xs" c="dimmed">
+                    <Group gap="sm" py="xs">
+                      <Loader size="xs" color="blue" />
+                      <Text
+                        size="sm"
+                        fw={500}
+                        style={{ color: "var(--rb-text-secondary)" }}
+                      >
                         Tracing...
                       </Text>
                     </Group>
@@ -220,10 +247,10 @@ export function TraceroutePanel({ targetId }: TraceroutePanelProps) {
 
           {complete && !running && (
             <Badge
-              size="xs"
-              color={complete.reached_destination ? "teal" : "yellow"}
+              size="sm"
+              color={complete.reached_destination ? "green" : "yellow"}
               variant="light"
-              mt="sm"
+              mt="md"
             >
               {complete.reached_destination
                 ? "Destination reached"

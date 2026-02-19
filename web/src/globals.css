@@ -1,8 +1,20 @@
 :root {
-  --rb-border: #e2e8f0;
-  --rb-canvas: #f8fafc;
+  --rb-border: rgba(0, 0, 0, 0.06);
+  --rb-canvas: #ffffff;
   --rb-surface: #ffffff;
-  --rb-muted: #64748b;
+  --rb-muted: #86868b;
+  --rb-text: #1d1d1f;
+  --rb-text-secondary: #6e6e73;
+  --rb-accent: #0071e3;
+  --rb-accent-soft: rgba(0, 113, 227, 0.08);
+  --rb-success: #34c759;
+  --rb-danger: #ff3b30;
+  --rb-warning: #ff9f0a;
+  --rb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --rb-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --rb-shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --rb-radius: 12px;
+  --rb-dot: 9px;
 }
 
 *,
@@ -11,9 +23,90 @@
   box-sizing: border-box;
 }
 
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--rb-canvas);
+  color: var(--rb-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── AppShell chrome ── */
+.mantine-AppShell-root {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.mantine-AppShell-header,
+.mantine-AppShell-footer {
+  position: sticky !important;
+  width: 100% !important;
+  left: auto !important;
+  right: auto !important;
+}
+
+.mantine-AppShell-header {
+  border-bottom: none !important;
+}
+
+.mantine-AppShell-footer {
+  border-top: none !important;
+}
+
+/* ── Inputs ── */
+.mantine-Select-input {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  padding: 5px 12px !important;
+  height: auto !important;
+}
+
+.mantine-TextInput-input,
+.mantine-NumberInput-input {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.mantine-Select-input:focus,
+.mantine-TextInput-input:focus,
+.mantine-NumberInput-input:focus {
+  border-color: var(--rb-accent) !important;
+  box-shadow: 0 0 0 3px var(--rb-accent-soft) !important;
+}
+
+/* ── Buttons ── */
+.mantine-Button-root {
+  font-weight: 600;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ── Tables ── */
+.mantine-Table-tr {
+  transition: background 0.15s ease;
+}
+
+.mantine-Table-th {
+  border-bottom-color: var(--rb-border) !important;
+}
+
+/* ── Landing beacon pulse ── */
+@keyframes beacon-pulse {
+  0% { transform: scale(1); opacity: 0.4; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ── Tabs ── */
+.mantine-Tabs-tab {
+  border-radius: 0 !important;
+  font-weight: 600 !important;
+}
+
+.mantine-Tabs-tab[data-active] {
+  color: var(--rb-accent) !important;
 }

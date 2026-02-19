@@ -4,13 +4,10 @@ import {
   Group,
   TextInput,
   Button,
-  SegmentedControl,
   Text,
   Card,
   Badge,
-  Table,
   Alert,
-  Code,
   Tooltip,
   CopyButton,
   ActionIcon,
@@ -30,9 +27,14 @@ interface RouteLookupProps {
   targetId: string | null;
 }
 
+const cardStyle = {
+  border: "1px solid var(--rb-border)",
+  boxShadow: "var(--rb-shadow-sm)",
+  background: "var(--rb-surface)",
+};
+
 export function RouteLookup({ targetId }: RouteLookupProps) {
   const [prefix, setPrefix] = useState("");
-  const [matchType, setMatchType] = useState<string>("auto");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RouteLookupResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +45,9 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
     setError(null);
     setResult(null);
     try {
-      const mt =
-        matchType === "auto"
-          ? undefined
-          : (matchType as "exact" | "longest");
-      const data = await api.lookupRoutes(targetId, prefix.trim(), mt);
+      const trimmed = prefix.trim();
+      const mt = trimmed.includes("/") ? "exact" : "longest";
+      const data = await api.lookupRoutes(targetId, trimmed, mt);
       setResult(data);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -69,32 +69,29 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
   };
 
   return (
-    <Stack gap="md">
+    <Stack gap="lg">
+      <Text size="xs" fw={400} style={{ color: "var(--rb-muted)" }}>
+        Enter a CIDR prefix (e.g. 192.0.2.0/24) for an exact match, or a bare IP address (e.g. 198.51.100.1) for the longest prefix match.
+      </Text>
       <Group gap="sm" align="flex-end">
         <TextInput
-          placeholder="8.8.8.0/24 or 2001:db8::1"
+          placeholder="192.0.2.0/24 or 2001:db8::1"
           label="Prefix / IP"
           value={prefix}
           onChange={(e) => setPrefix(e.currentTarget.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           disabled={!targetId}
           style={{ flex: 1 }}
-          styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
-        />
-        <SegmentedControl
-          value={matchType}
-          onChange={setMatchType}
-          data={[
-            { label: "Auto", value: "auto" },
-            { label: "Exact", value: "exact" },
-            { label: "Longest", value: "longest" },
-          ]}
+          styles={{
+            input: { fontFamily: "var(--mantine-font-family-monospace)" },
+          }}
         />
         <Button
           onClick={handleSearch}
           loading={loading}
           disabled={!targetId || !prefix.trim()}
           leftSection={!loading && <IconSearch size={16} />}
+          w={120}
         >
           Lookup
         </Button>
@@ -105,18 +102,18 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
           color="red"
           variant="light"
           icon={<IconAlertTriangle size={16} />}
-          title="Lookup failed"
+          radius="lg"
         >
-          <Text size="xs" ff="monospace">
+          <Text size="sm" fw={500} ff="monospace">
             {error}
           </Text>
         </Alert>
       )}
 
       {loading && (
-        <Group justify="center" py="xl">
-          <Loader size="sm" color="teal" />
-          <Text size="sm" c="dimmed">
+        <Group justify="center" py={40}>
+          <Loader size="sm" color="blue" />
+          <Text size="sm" fw={500} style={{ color: "var(--rb-text-secondary)" }}>
             Querying routes...
           </Text>
         </Group>
@@ -129,65 +126,83 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
 
 function RouteResult({ result }: { result: RouteLookupResponse }) {
   return (
-    <Stack gap="sm">
-      <Group gap="sm" justify="space-between">
-        <Group gap="xs">
-          <Code ff="monospace">{result.prefix}</Code>
-          <Badge size="xs" variant="light" color="teal">
-            {result.meta.match_type}
-          </Badge>
-          {result.meta.stale && (
-            <Badge size="xs" variant="light" color="yellow">
-              stale
+    <Card padding="md" style={cardStyle}>
+      <Stack gap="md">
+        <Group gap="sm" justify="space-between" align="center">
+          <Group gap="sm">
+            <Text size="sm" fw={600} ff="monospace">
+              {result.prefix}
+            </Text>
+            <Badge size="sm" variant="light" color="blue">
+              {result.meta.match_type}
             </Badge>
-          )}
+            {result.meta.stale && (
+              <Badge size="sm" variant="light" color="yellow">
+                stale
+              </Badge>
+            )}
+          </Group>
+          <Text size="xs" fw={500} style={{ color: "var(--rb-muted)" }}>
+            {result.paths.length} path{result.paths.length !== 1 ? "s" : ""}
+            {" · "}updated{" "}
+            {new Date(result.meta.data_updated_at).toLocaleTimeString()}
+          </Text>
         </Group>
-        <Text size="xs" c="dimmed">
-          {result.paths.length} path{result.paths.length !== 1 ? "s" : ""}
-          {" "}&middot; updated{" "}
-          {new Date(result.meta.data_updated_at).toLocaleTimeString()}
-        </Text>
-      </Group>
 
-      {result.paths.length === 0 ? (
-        <Text size="sm" c="dimmed" ta="center" py="md">
-          No paths found for this prefix.
-        </Text>
-      ) : (
-        result.paths.map((path, i) => (
-          <PathCard key={i} path={path} index={i} />
-        ))
-      )}
-    </Stack>
+        {result.paths.length === 0 ? (
+          <Text
+            size="sm"
+            fw={500}
+            ta="center"
+            py="lg"
+            style={{ color: "var(--rb-text-secondary)" }}
+          >
+            No paths found for this prefix.
+          </Text>
+        ) : (
+          result.paths.map((path, i) => (
+            <Box key={i}>
+              {i > 0 && (
+                <Box
+                  mb="md"
+                  style={{ borderTop: "1px solid var(--rb-border)" }}
+                />
+              )}
+              <PathCard path={path} index={i} />
+            </Box>
+          ))
+        )}
+      </Stack>
+    </Card>
   );
 }
 
 function PathCard({ path, index }: { path: RoutePath; index: number }) {
+  const allCommunities = [
+    ...path.communities.map((c) => c.value),
+    ...path.extended_communities.map((c) => c.value),
+    ...path.large_communities.map((c) => c.value),
+  ];
+
   return (
-    <Card
-      withBorder
-      padding="md"
-      style={{
-        borderColor: path.best
-          ? "var(--mantine-color-teal-3)"
-          : "var(--rb-border)",
-        background: path.best
-          ? "var(--mantine-color-teal-0)"
-          : "var(--rb-surface)",
-      }}
-    >
-      <Stack gap="xs">
-        <Group gap="xs" justify="space-between">
-          <Group gap="xs">
-            <Text size="xs" fw={600} c="dimmed">
-              PATH {index + 1}
+    <Stack gap={10}>
+        {/* Header */}
+        <Group gap="sm" justify="space-between">
+          <Group gap="sm">
+            <Text
+              size="xs"
+              fw={700}
+              tt="uppercase"
+              style={{ color: "var(--rb-muted)", letterSpacing: "0.05em" }}
+            >
+              Path {index + 1}
             </Text>
             {path.best && (
-              <Badge size="xs" color="teal">
-                BEST
+              <Badge size="sm" color="blue" variant="filled">
+                Best
               </Badge>
             )}
-            <Badge size="xs" variant="light" color="gray" tt="uppercase">
+            <Badge size="sm" variant="light" color="gray" tt="uppercase">
               {path.origin}
             </Badge>
           </Group>
@@ -196,7 +211,7 @@ function PathCard({ path, index }: { path: RoutePath; index: number }) {
               <Tooltip label={copied ? "Copied" : "Copy path"}>
                 <ActionIcon
                   variant="subtle"
-                  color={copied ? "teal" : "gray"}
+                  color={copied ? "blue" : "gray"}
                   size="sm"
                   onClick={copy}
                 >
@@ -207,141 +222,82 @@ function PathCard({ path, index }: { path: RoutePath; index: number }) {
           </CopyButton>
         </Group>
 
-        <Table
-          horizontalSpacing="sm"
-          verticalSpacing="xs"
-          styles={{
-            td: {
-              fontFamily: "var(--mantine-font-family-monospace)",
-              fontSize: "var(--mantine-font-size-xs)",
-            },
-          }}
-        >
-          <Table.Tbody>
-            <AttrRow label="Next Hop" value={path.next_hop} />
-            <Table.Tr>
-              <Table.Td w={110}>
-                <Text size="xs" c="dimmed" fw={500}>
-                  AS Path
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <ASPath asns={path.as_path} />
-              </Table.Td>
-            </Table.Tr>
-            {path.med != null && (
-              <AttrRow label="MED" value={String(path.med)} />
-            )}
-            {path.local_pref != null && (
-              <AttrRow label="Local Pref" value={String(path.local_pref)} />
-            )}
-            {path.communities.length > 0 && (
-              <CommunityRow
-                label="Communities"
-                values={path.communities.map((c) => c.value)}
-              />
-            )}
-            {path.extended_communities.length > 0 && (
-              <CommunityRow
-                label="Ext Communities"
-                values={path.extended_communities.map((c) => c.value)}
-              />
-            )}
-            {path.large_communities.length > 0 && (
-              <CommunityRow
-                label="Large Communities"
-                values={path.large_communities.map((c) => c.value)}
-              />
-            )}
-          </Table.Tbody>
-        </Table>
-      </Stack>
-    </Card>
-  );
-}
-
-function AttrRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Table.Tr>
-      <Table.Td w={110}>
-        <Text size="xs" c="dimmed" fw={500}>
-          {label}
-        </Text>
-      </Table.Td>
-      <Table.Td>
-        <Text size="xs" ff="monospace">
-          {value}
-        </Text>
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
-function CommunityRow({
-  label,
-  values,
-}: {
-  label: string;
-  values: string[];
-}) {
-  return (
-    <Table.Tr>
-      <Table.Td w={110}>
-        <Text size="xs" c="dimmed" fw={500}>
-          {label}
-        </Text>
-      </Table.Td>
-      <Table.Td>
-        <Group gap={4} wrap="wrap">
-          {values.map((v, i) => (
-            <Badge
-              key={i}
-              size="xs"
-              variant="outline"
-              color="gray"
-              ff="monospace"
-              styles={{ label: { textTransform: "none" } }}
-            >
-              {v}
-            </Badge>
-          ))}
-        </Group>
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
-function ASPath({ asns }: { asns: number[] }) {
-  if (asns.length === 0) {
-    return (
-      <Text size="xs" c="dimmed" ff="monospace">
-        (empty)
-      </Text>
-    );
-  }
-  return (
-    <Group gap={2} wrap="wrap">
-      {asns.map((asn, i) => (
-        <Box
-          key={i}
-          style={{ display: "inline-flex", alignItems: "center", gap: 2 }}
-        >
-          <Badge
-            size="xs"
-            variant="filled"
-            color="gray.7"
-            ff="monospace"
-            styles={{ label: { textTransform: "none" } }}
-          >
-            {asn}
-          </Badge>
-          {i < asns.length - 1 && (
-            <Text size="xs" c="dimmed" span>
-              &rarr;
-            </Text>
+        {/* Attributes line */}
+        <Group gap={6} wrap="wrap">
+          <Attr label="Next Hop" value={path.next_hop} />
+          {path.med != null && <Attr label="MED" value={String(path.med)} />}
+          {path.local_pref != null && (
+            <Attr label="LP" value={String(path.local_pref)} />
           )}
-        </Box>
-      ))}
+        </Group>
+
+        {/* AS Path */}
+        <Group gap={6} align="center" wrap="wrap">
+          <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
+            AS Path
+          </Text>
+          {path.as_path.length === 0 ? (
+            <Text size="xs" fw={500} ff="monospace" style={{ color: "var(--rb-muted)" }}>
+              (empty)
+            </Text>
+          ) : (
+            path.as_path.map((asn, i) => (
+              <Box
+                key={i}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <Badge
+                  size="sm"
+                  variant="filled"
+                  color="dark"
+                  ff="monospace"
+                  styles={{ label: { textTransform: "none", fontWeight: 600 } }}
+                >
+                  {asn}
+                </Badge>
+                {i < path.as_path.length - 1 && (
+                  <Text size="xs" span style={{ color: "var(--rb-muted)" }}>
+                    →
+                  </Text>
+                )}
+              </Box>
+            ))
+          )}
+        </Group>
+
+        {/* Communities */}
+        {allCommunities.length > 0 && (
+          <Group gap={4} wrap="wrap" align="center">
+            <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
+              Communities
+            </Text>
+            {allCommunities.map((v, i) => (
+              <Badge
+                key={i}
+                size="sm"
+                variant="light"
+                color="gray"
+                ff="monospace"
+                styles={{ label: { textTransform: "none", fontWeight: 500 } }}
+              >
+                {v}
+              </Badge>
+            ))}
+          </Group>
+        )}
+    </Stack>
+  );
+}
+
+function Attr({ label, value }: { label: string; value: string }) {
+  return (
+    <Group gap={4} wrap="nowrap">
+      <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
+        {label}
+      </Text>
+      <Text size="sm" fw={500} ff="monospace">
+        {value}
+      </Text>
     </Group>
   );
 }

@@ -4,11 +4,9 @@ import {
   Group,
   Text,
   Tabs,
-  Container,
   Box,
 } from "@mantine/core";
 import {
-  IconRoute,
   IconWorldSearch,
   IconPingPong,
   IconArrowsShuffle,
@@ -28,126 +26,194 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string | null>("routes");
 
   return (
-    <AppShell header={{ height: 56 }} footer={{ height: 36 }} padding={0}>
-      <AppShell.Header
-        style={{
-          borderBottom: "1px solid var(--rb-border)",
-          background: "var(--rb-surface)",
-        }}
-      >
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="sm">
-            <Box
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "var(--mantine-radius-md)",
-                background:
-                  "linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <IconRoute size={18} color="#fff" stroke={2.5} />
-            </Box>
-            <div>
-              <Text size="sm" fw={700} lh={1.2}>
+    <AppShell
+      header={selectedTarget ? { height: 64 } : undefined}
+      footer={selectedTarget ? { height: 40 } : undefined}
+      padding={0}
+      style={{ maxWidth: 960, margin: "0 auto" }}
+    >
+      {selectedTarget && (
+        <AppShell.Header
+          style={{
+            background: "rgba(255, 255, 255, 0.8)",
+            backdropFilter: "saturate(180%) blur(20px)",
+            WebkitBackdropFilter: "saturate(180%) blur(20px)",
+          }}
+        >
+          <Group h="100%" px="lg" justify="space-between">
+            <Group gap={10}>
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 28 28"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle cx="14" cy="14" r="6" fill="var(--rb-accent)" />
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="10"
+                  stroke="var(--rb-accent)"
+                  strokeWidth="1.5"
+                  strokeOpacity="0.3"
+                />
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="13"
+                  stroke="var(--rb-accent)"
+                  strokeWidth="1"
+                  strokeOpacity="0.12"
+                />
+              </svg>
+              <Text
+                size="md"
+                fw={700}
+                style={{ color: "var(--rb-text)", letterSpacing: "-0.02em" }}
+              >
                 Route Beacon
               </Text>
-              <Text size="xs" c="dimmed" lh={1}>
-                BGP Looking Glass
-              </Text>
-            </div>
+            </Group>
           </Group>
+        </AppShell.Header>
+      )}
 
-          <Box w={320}>
-            <TargetSelector
-              targets={targets}
-              value={selectedTarget}
-              onChange={setSelectedTarget}
-              loading={targetsLoading}
-            />
-          </Box>
-        </Group>
-      </AppShell.Header>
-
-      <AppShell.Main
-        style={{
-          background: "var(--rb-canvas)",
-          minHeight: "calc(100vh - 56px - 36px)",
-        }}
-      >
-        <Container size="lg" py="md">
-          <Tabs
-            value={activeTab}
-            onChange={setActiveTab}
-            variant="default"
-            styles={{
-              tab: {
-                fontWeight: 500,
-                fontSize: "var(--mantine-font-size-sm)",
-              },
-              panel: {
-                paddingTop: "var(--mantine-spacing-md)",
-              },
-            }}
-          >
-            <Tabs.List
-              style={{ borderBottom: "1px solid var(--rb-border)" }}
-            >
-              <Tabs.Tab
-                value="routes"
-                leftSection={<IconWorldSearch size={16} />}
+      <AppShell.Main style={{ background: "var(--rb-canvas)" }}>
+        <Box py={56} px="xl">
+          {!selectedTarget ? (
+            <Box ta="center" style={{ minHeight: "calc(100vh - 152px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ position: "relative", width: 48, height: 48, margin: "0 auto" }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 14,
+                    left: 14,
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    background: "var(--rb-accent)",
+                    animation: "beacon-pulse 2s ease-out infinite",
+                  }}
+                />
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 48 48"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  style={{ position: "relative", display: "block" }}
+                >
+                  <circle cx="24" cy="24" r="10" fill="var(--rb-accent)" />
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="17"
+                    stroke="var(--rb-accent)"
+                    strokeWidth="1.5"
+                    strokeOpacity="0.3"
+                  />
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="23"
+                    stroke="var(--rb-accent)"
+                    strokeWidth="1"
+                    strokeOpacity="0.15"
+                  />
+                </svg>
+              </div>
+              <Text
+                size="lg"
+                fw={700}
+                mt="lg"
+                style={{ color: "var(--rb-text)" }}
               >
-                Route Lookup
-              </Tabs.Tab>
-              <Tabs.Tab
-                value="ping"
-                leftSection={<IconPingPong size={16} />}
-              >
-                Ping
-              </Tabs.Tab>
-              <Tabs.Tab
-                value="traceroute"
-                leftSection={<IconArrowsShuffle size={16} />}
-              >
-                Traceroute
-              </Tabs.Tab>
-            </Tabs.List>
-
-            <Tabs.Panel value="routes">
-              <RouteLookup targetId={selectedTarget} />
-            </Tabs.Panel>
-
-            <Tabs.Panel value="ping">
-              <PingPanel targetId={selectedTarget} />
-            </Tabs.Panel>
-
-            <Tabs.Panel value="traceroute">
-              <TraceroutePanel targetId={selectedTarget} />
-            </Tabs.Panel>
-          </Tabs>
-
-          {!selectedTarget && (
-            <Box ta="center" py="xl">
-              <IconRoute size={48} color="var(--rb-muted)" stroke={1.5} />
-              <Text size="sm" fw={500} c="dimmed" mt="sm">
-                Select a target router to begin
+                Welcome to Route Beacon Looking Glass
               </Text>
-              <Text size="xs" c="dimmed" mt="xs">
-                Choose a BGP peer from the dropdown above to query routes,
-                run ping, or traceroute.
+              <Text
+                size="sm"
+                fw={400}
+                mt="sm"
+                maw={480}
+                mx="auto"
+                style={{ color: "var(--rb-text-secondary)", lineHeight: 1.6 }}
+              >
+                A read-only view into the routing table of the network.
+                Inspect advertised prefixes, verify AS paths, troubleshoot
+                reachability, and measure latency to remote destinations.
+              </Text>
+              <Box w={360} mx="auto" mt="md">
+                <TargetSelector
+                  targets={targets}
+                  value={selectedTarget}
+                  onChange={setSelectedTarget}
+                  loading={targetsLoading}
+                />
+              </Box>
+              <Text
+                size="sm"
+                fw={500}
+                mt="sm"
+                style={{ color: "var(--rb-muted)" }}
+              >
+                Select a target router to get started.
               </Text>
             </Box>
+          ) : (
+            <Tabs
+              value={activeTab}
+              onChange={setActiveTab}
+              styles={{ panel: { paddingTop: 32 } }}
+            >
+              <Tabs.List>
+                <Tabs.Tab
+                  value="routes"
+                  leftSection={<IconWorldSearch size={16} />}
+                >
+                  Route Lookup
+                </Tabs.Tab>
+                <Tabs.Tab
+                  value="ping"
+                  leftSection={<IconPingPong size={16} />}
+                >
+                  Ping
+                </Tabs.Tab>
+                <Tabs.Tab
+                  value="traceroute"
+                  leftSection={<IconArrowsShuffle size={16} />}
+                >
+                  Traceroute
+                </Tabs.Tab>
+              </Tabs.List>
+
+              <Tabs.Panel value="routes">
+                <RouteLookup targetId={selectedTarget} />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="ping">
+                <PingPanel targetId={selectedTarget} />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="traceroute">
+                <TraceroutePanel targetId={selectedTarget} />
+              </Tabs.Panel>
+            </Tabs>
           )}
-        </Container>
+        </Box>
       </AppShell.Main>
 
-      <AppShell.Footer>
-        <StatusBar health={health} error={healthError} />
-      </AppShell.Footer>
+      {selectedTarget && (
+        <AppShell.Footer
+          style={{
+            background: "rgba(255, 255, 255, 0.8)",
+            backdropFilter: "saturate(180%) blur(20px)",
+            WebkitBackdropFilter: "saturate(180%) blur(20px)",
+          }}
+        >
+          <StatusBar health={health} error={healthError} />
+        </AppShell.Footer>
+      )}
     </AppShell>
   );
 }

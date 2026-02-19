@@ -26,6 +26,27 @@ interface PingPanelProps {
   targetId: string | null;
 }
 
+const tableStyles = {
+  td: {
+    fontFamily: "var(--mantine-font-family-monospace)",
+    fontSize: "var(--mantine-font-size-sm)",
+  },
+  th: {
+    fontSize: "var(--mantine-font-size-xs)",
+    fontWeight: 700,
+    color: "var(--rb-muted)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    borderBottomColor: "var(--rb-border)",
+  },
+};
+
+const cardStyle = {
+  border: "1px solid var(--rb-border)",
+  boxShadow: "var(--rb-shadow-sm)",
+  background: "var(--rb-surface)",
+};
+
 export function PingPanel({ targetId }: PingPanelProps) {
   const [destination, setDestination] = useState("");
   const [count, setCount] = useState<number>(5);
@@ -87,17 +108,22 @@ export function PingPanel({ targetId }: PingPanelProps) {
   const progress = count > 0 ? (replies.length / count) * 100 : 0;
 
   return (
-    <Stack gap="md">
+    <Stack gap="lg">
+      <Text size="xs" fw={400} style={{ color: "var(--rb-muted)" }}>
+        Send ICMP echo requests to test reachability and measure round-trip latency.
+      </Text>
       <Group gap="sm" align="flex-end">
         <TextInput
-          placeholder="8.8.8.8 or 2001:4860:4860::8888"
+          placeholder="192.0.2.1 or 2001:db8::1"
           label="Destination"
           value={destination}
           onChange={(e) => setDestination(e.currentTarget.value)}
           onKeyDown={(e) => e.key === "Enter" && !running && handleStart()}
           disabled={!targetId || running}
           style={{ flex: 1 }}
-          styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
+          styles={{
+            input: { fontFamily: "var(--mantine-font-family-monospace)" },
+          }}
         />
         <NumberInput
           label="Count"
@@ -105,7 +131,7 @@ export function PingPanel({ targetId }: PingPanelProps) {
           onChange={(v) => setCount(typeof v === "number" ? v : 5)}
           min={1}
           max={10}
-          w={80}
+          w={100}
           disabled={running}
         />
         {running ? (
@@ -114,6 +140,7 @@ export function PingPanel({ targetId }: PingPanelProps) {
             variant="light"
             onClick={handleStop}
             leftSection={<IconPlayerStop size={16} />}
+            w={120}
           >
             Stop
           </Button>
@@ -122,6 +149,7 @@ export function PingPanel({ targetId }: PingPanelProps) {
             onClick={handleStart}
             disabled={!targetId || !destination.trim()}
             leftSection={<IconPlayerPlay size={16} />}
+            w={120}
           >
             Ping
           </Button>
@@ -133,38 +161,25 @@ export function PingPanel({ targetId }: PingPanelProps) {
           color="red"
           variant="light"
           icon={<IconAlertTriangle size={16} />}
+          radius="lg"
         >
-          <Text size="xs" ff="monospace">
+          <Text size="sm" fw={500} ff="monospace">
             {error}
           </Text>
         </Alert>
       )}
 
       {(replies.length > 0 || running) && (
-        <Card
-          withBorder
-          padding="md"
-          style={{ borderColor: "var(--rb-border)" }}
-        >
-          <Stack gap="sm">
+        <Card padding="xl" style={cardStyle}>
+          <Stack gap="md">
             {running && (
-              <Progress value={progress} color="teal" size="xs" animated />
+              <Progress value={progress} color="blue" size="xs" radius="xl" animated />
             )}
 
             <Table
               horizontalSpacing="sm"
-              verticalSpacing="xs"
-              styles={{
-                td: {
-                  fontFamily: "var(--mantine-font-family-monospace)",
-                  fontSize: "var(--mantine-font-size-xs)",
-                },
-                th: {
-                  fontSize: "var(--mantine-font-size-xs)",
-                  fontWeight: 600,
-                  color: "var(--rb-muted)",
-                },
-              }}
+              verticalSpacing={12}
+              styles={tableStyles}
             >
               <Table.Thead>
                 <Table.Tr>
@@ -177,15 +192,23 @@ export function PingPanel({ targetId }: PingPanelProps) {
               <Table.Tbody>
                 {replies.map((r) => (
                   <Table.Tr key={r.seq}>
-                    <Table.Td>{r.seq}</Table.Td>
                     <Table.Td>
-                      {r.success ? `${r.rtt_ms.toFixed(2)} ms` : "—"}
+                      <Text size="sm" fw={500} ff="monospace">{r.seq}</Text>
                     </Table.Td>
-                    <Table.Td>{r.success ? r.ttl : "—"}</Table.Td>
+                    <Table.Td>
+                      <Text size="sm" fw={500} ff="monospace">
+                        {r.success ? `${r.rtt_ms.toFixed(2)} ms` : "—"}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" fw={500} ff="monospace">
+                        {r.success ? r.ttl : "—"}
+                      </Text>
+                    </Table.Td>
                     <Table.Td>
                       <Badge
-                        size="xs"
-                        color={r.success ? "teal" : "red"}
+                        size="sm"
+                        color={r.success ? "green" : "red"}
                         variant="light"
                       >
                         {r.success ? "OK" : "FAIL"}
@@ -207,45 +230,50 @@ export function PingPanel({ targetId }: PingPanelProps) {
 function PingSummaryCard({ summary }: { summary: PingSummary }) {
   const lossColor =
     summary.loss_pct === 0
-      ? "teal"
+      ? "var(--rb-success)"
       : summary.loss_pct < 50
-        ? "yellow"
-        : "red";
+        ? "var(--rb-warning)"
+        : "var(--rb-danger)";
 
   return (
-    <Card
-      withBorder
-      padding="md"
-      style={{
-        borderColor: "var(--rb-border)",
-        background: "var(--rb-canvas)",
-      }}
-    >
-      <Text size="xs" fw={600} c="dimmed" mb="xs">
-        SUMMARY
+    <Card padding="lg" style={cardStyle}>
+      <Text
+        size="xs"
+        fw={700}
+        tt="uppercase"
+        mb="md"
+        style={{ color: "var(--rb-muted)", letterSpacing: "0.05em" }}
+      >
+        Summary
       </Text>
       <Group gap="xl">
         <Box>
-          <Text size="xs" c="dimmed">
+          <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
             Sent / Received
           </Text>
-          <Text size="xs" fw={600} ff="monospace">
+          <Text size="sm" fw={600} ff="monospace" mt={2}>
             {summary.packets_sent} / {summary.packets_received}
           </Text>
         </Box>
         <Box>
-          <Text size="xs" c="dimmed">
+          <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
             Loss
           </Text>
-          <Text size="xs" fw={600} ff="monospace" c={lossColor}>
+          <Text
+            size="sm"
+            fw={600}
+            ff="monospace"
+            mt={2}
+            style={{ color: lossColor }}
+          >
             {summary.loss_pct.toFixed(1)}%
           </Text>
         </Box>
         <Box>
-          <Text size="xs" c="dimmed">
+          <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
             Min / Avg / Max
           </Text>
-          <Text size="xs" fw={600} ff="monospace">
+          <Text size="sm" fw={600} ff="monospace" mt={2}>
             {summary.rtt_min_ms.toFixed(2)} / {summary.rtt_avg_ms.toFixed(2)}{" "}
             / {summary.rtt_max_ms.toFixed(2)} ms
           </Text>
