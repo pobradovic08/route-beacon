@@ -19,14 +19,6 @@ export function TargetSelector({
     label: `${t.display_name} — AS${t.asn}`,
   }));
 
-  const selectedTarget = targets.find((t) => t.id === value);
-  const statusColor =
-    selectedTarget?.status === "up"
-      ? "var(--rb-success)"
-      : selectedTarget?.status === "down"
-        ? "var(--rb-danger)"
-        : "var(--rb-muted)";
-
   return (
     <Select
       placeholder="Select a target router"
@@ -36,19 +28,6 @@ export function TargetSelector({
       searchable
       clearable
       disabled={loading}
-      leftSection={
-        value ? (
-          <Box
-            style={{
-              width: "var(--rb-dot)",
-              height: "var(--rb-dot)",
-              borderRadius: "50%",
-              background: statusColor,
-              flexShrink: 0,
-            }}
-          />
-        ) : undefined
-      }
       renderOption={({ option }) => {
         const target = targets.find((t) => t.id === option.value);
         const dotColor =

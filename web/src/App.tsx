@@ -41,10 +41,10 @@ export default function App() {
           }}
         >
           <Group h="100%" px="lg" justify="space-between">
-            <Group gap={10}>
+            <Group gap={12}>
               <svg
-                width="28"
-                height="28"
+                width="34"
+                height="34"
                 viewBox="0 0 28 28"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -68,19 +68,27 @@ export default function App() {
                 />
               </svg>
               <Text
-                size="md"
+                size="lg"
                 fw={700}
                 style={{ color: "var(--rb-text)", letterSpacing: "-0.02em" }}
               >
                 Route Beacon
               </Text>
             </Group>
+            <Box w={300}>
+              <TargetSelector
+                targets={targets}
+                value={selectedTarget}
+                onChange={setSelectedTarget}
+                loading={targetsLoading}
+              />
+            </Box>
           </Group>
         </AppShell.Header>
       )}
 
       <AppShell.Main style={{ background: "var(--rb-canvas)" }}>
-        <Box py={56} px="xl">
+        <Box pt={12} pb={56} px="xl">
           {!selectedTarget ? (
             <Box ta="center" style={{ minHeight: "calc(100vh - 152px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
               <div style={{ position: "relative", width: 48, height: 48, margin: "0 auto" }}>

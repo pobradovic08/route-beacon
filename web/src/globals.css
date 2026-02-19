@@ -64,12 +64,15 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
   padding: 5px 12px !important;
   height: auto !important;
+  font-weight: 500 !important;
 }
 
 .mantine-TextInput-input,
 .mantine-NumberInput-input {
   border-color: rgba(0, 0, 0, 0.1) !important;
   transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  padding: 5px 12px !important;
+  height: auto !important;
 }
 
 .mantine-Select-input:focus,
@@ -81,6 +84,8 @@ body {
 
 /* ── Buttons ── */
 .mantine-Button-root {
+  padding: 5px 16px !important;
+  height: 46px !important;
   font-weight: 600;
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
