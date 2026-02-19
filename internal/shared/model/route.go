@@ -26,6 +26,8 @@ type BGPPath struct {
 	Aggregator          *Aggregator         `json:"aggregator,omitempty"`
 	AtomicAggregate     bool                `json:"atomic_aggregate,omitempty"`
 	IsBest              bool                `json:"is_best"`
+	IsFiltered          bool                `json:"is_filtered"`
+	IsStale             bool                `json:"is_stale"`
 	Age                 time.Duration       `json:"age"`
 	ReceivedAt          time.Time           `json:"received_at"`
 	PathID              uint32              `json:"path_id,omitempty"`

@@ -47,6 +47,8 @@ export interface Aggregator {
 
 export interface RoutePath {
   best: boolean;
+  filtered: boolean;
+  stale: boolean;
   as_path: number[];
   next_hop: string;
   origin: "igp" | "egp" | "incomplete";

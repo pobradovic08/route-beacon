@@ -161,6 +161,8 @@ func modelPathToAPI(p model.BGPPath) BGPPath {
 
 	return BGPPath{
 		Best:                p.IsBest,
+		Filtered:            p.IsFiltered,
+		Stale:               p.IsStale,
 		AsPath:              asPath,
 		NextHop:             p.NextHop.String(),
 		Origin:              origin,
