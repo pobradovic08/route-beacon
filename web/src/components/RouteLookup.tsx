@@ -273,7 +273,9 @@ function PathRows({
     ...path.large_communities.map((c) => c.value),
   ];
 
-  const asPathStr = path.as_path.length > 0 ? path.as_path.join(" → ") : "(empty)";
+  const asPathStr = path.as_path.length > 0
+    ? path.as_path.map((seg) => Array.isArray(seg) ? `{${seg.join(",")}}` : String(seg)).join(" → ")
+    : "(empty)";
 
   return (
     <>
@@ -402,7 +404,7 @@ function Attr({ label, value }: { label: string; value: string }) {
 function formatPathText(path: RoutePath): string {
   const lines: string[] = [];
   lines.push(`Next Hop: ${path.next_hop}`);
-  lines.push(`AS Path: ${path.as_path.join(" ")}`);
+  lines.push(`AS Path: ${path.as_path.map((seg) => Array.isArray(seg) ? `{${seg.join(",")}}` : String(seg)).join(" ")}`);
   lines.push(`Origin: ${path.origin}`);
   if (path.med != null) lines.push(`MED: ${path.med}`);
   if (path.local_pref != null) lines.push(`Local Pref: ${path.local_pref}`);

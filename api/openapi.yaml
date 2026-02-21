@@ -1,24 +1,17 @@
 openapi: 3.0.3
 info:
-  title: BGP Looking Glass API
-  version: 1.0.0
+  title: Route Beacon API
+  version: 2.0.0
   description: |
-    Central REST API for the BGP Looking Glass system. Provides route lookups,
-    ping, and traceroute diagnostics from distributed collector nodes, each
-    peering with one or more BGP routers.
+    Read-only REST API for the BGP Looking Glass. Serves route data from a
+    PostgreSQL database populated by the external BMP ingester (route-beacon-ri).
 
-    ## Rate Limiting
+    ## Architecture
 
-    Route lookup, ping, and traceroute endpoints share a combined rate limit of
-    **1 request per 30 seconds per client IP address**. When the limit is
-    exceeded the server returns `429 Too Many Requests` with a `Retry-After`
-    header indicating how many seconds the client must wait.
-
-    ## Streaming (SSE)
-
-    Ping and traceroute endpoints return Server-Sent Events (`text/event-stream`).
-    Each SSE message carries a JSON payload in its `data:` field and a typed
-    `event:` field. The stream always ends with a `complete` event.
+    This API is read-only. The database is written exclusively by the
+    route-beacon-ri ingester service. The API queries `routers`,
+    `current_routes`, `route_events`, `rib_sync_status`, and the
+    `route_summary` materialized view.
 
     ## Error Format
 
@@ -41,86 +34,45 @@ paths:
   /api/v1/health:
     get:
       operationId: getHealth
-      summary: Health check
-      description: Returns the overall health of the central API and a summary of connected collectors.
+      summary: System health check
+      description: |
+        Returns the overall health of the API and a summary of monitored routers.
+        Health state is derived from router sync status and database connectivity.
       tags: [health]
       responses:
         "200":
-          description: System is healthy.
+          description: System is healthy or degraded.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
               example:
                 status: healthy
-                collector_count: 5
-                connected_collectors: 4
-                total_routes: 20000000
+                router_count: 3
+                online_routers: 3
+                total_routes: 850000
                 uptime_seconds: 86400
         "503":
-          description: System is degraded or unavailable.
+          description: System is unhealthy (database unreachable or no routers).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
 
   # --------------------------------------------------------------------------
-  # Collectors
+  # Routers
   # --------------------------------------------------------------------------
-  /api/v1/collectors:
+  /api/v1/routers:
     get:
-      operationId: listCollectors
-      summary: List all collectors
-      description: Returns every registered collector with its current connection status and the number of router sessions (LG targets) it serves.
-      tags: [collectors]
-      responses:
-        "200":
-          description: Collector list.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Collector"
-              example:
-                data:
-                  - id: "col-fra-01"
-                    location: "Frankfurt, DE"
-                    status: online
-                    router_count: 4
-                  - id: "col-ams-01"
-                    location: "Amsterdam, NL"
-                    status: offline
-                    router_count: 2
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  # --------------------------------------------------------------------------
-  # LG Targets
-  # --------------------------------------------------------------------------
-  /api/v1/targets:
-    get:
-      operationId: listTargets
-      summary: List all LG targets
+      operationId: listRouters
+      summary: List all monitored routers
       description: |
-        Returns every LG target (router session) across all collectors.
-        Optionally filter by collector ID.
-      tags: [targets]
-      parameters:
-        - name: collector_id
-          in: query
-          required: false
-          description: Filter targets to those belonging to this collector.
-          schema:
-            type: string
-          example: "col-fra-01"
+        Returns every router known to the system with its metadata and
+        online/offline status derived from BMP session state.
+      tags: [routers]
       responses:
         "200":
-          description: Target list.
+          description: Router list.
           content:
             application/json:
               schema:
@@ -130,31 +82,33 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: "#/components/schemas/LGTarget"
+                      $ref: "#/components/schemas/Router"
               example:
                 data:
-                  - id: "tgt-fra-core1"
-                    collector:
-                      id: "col-fra-01"
-                      location: "Frankfurt, DE"
-                    display_name: "Frankfurt Core 1"
-                    asn: 64512
-                    status: up
-                    last_update: "2026-02-18T12:34:56Z"
+                  - id: "10.0.0.2"
+                    router_ip: "172.28.0.10"
+                    hostname: "bgp-router1"
+                    display_name: "bgp-router1"
+                    as_number: 65001
+                    description: "ISP Alpha core router"
+                    status: "up"
+                    eor_received: true
+                    first_seen: "2026-02-20T10:00:00Z"
+                    last_seen: "2026-02-21T14:30:00Z"
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/v1/targets/{targetId}:
+  /api/v1/routers/{routerId}:
     get:
-      operationId: getTarget
-      summary: Get a single LG target
-      description: Returns full details for one LG target, including collector info, session status, and data freshness.
-      tags: [targets]
+      operationId: getRouter
+      summary: Get a single router
+      description: Returns full details for one monitored router.
+      tags: [routers]
       parameters:
-        - $ref: "#/components/parameters/TargetId"
+        - $ref: "#/components/parameters/RouterId"
       responses:
         "200":
-          description: Target details.
+          description: Router details.
           content:
             application/json:
               schema:
@@ -162,7 +116,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/LGTarget"
+                    $ref: "#/components/schemas/Router"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -171,22 +125,19 @@ paths:
   # --------------------------------------------------------------------------
   # Route Lookup
   # --------------------------------------------------------------------------
-  /api/v1/targets/{targetId}/routes/lookup:
+  /api/v1/routers/{routerId}/routes/lookup:
     get:
       operationId: lookupRoutes
       summary: Look up routes for a prefix
       description: |
-        Returns all BGP paths the selected LG target holds for the given prefix.
+        Returns all BGP paths the selected router holds for the given prefix.
 
-        **Match behaviour**: when `match_type` is omitted the server auto-detects
-        based on the input. A CIDR prefix (e.g. `8.8.8.0/24`) triggers an exact
-        match; a bare IP address (e.g. `8.8.8.8`) triggers a longest-prefix match.
-
-        **Rate limited** -- shares the global 1 req / 30 s / client IP budget with
-        ping and traceroute.
+        **Match behaviour**: when `match_type` is omitted, the server auto-detects
+        based on input. A CIDR prefix (e.g. `8.8.8.0/24`) triggers an exact match;
+        a bare IP address (e.g. `8.8.8.8`) triggers a longest-prefix match.
       tags: [routes]
       parameters:
-        - $ref: "#/components/parameters/TargetId"
+        - $ref: "#/components/parameters/RouterId"
         - name: prefix
           in: query
           required: true
@@ -217,213 +168,80 @@ paths:
       responses:
         "200":
           description: Route lookup results.
-          headers:
-            Retry-After:
-              $ref: "#/components/headers/RetryAfter"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RouteLookupResponse"
-              example:
-                prefix: "8.8.8.0/24"
-                target:
-                  id: "tgt-fra-core1"
-                  display_name: "Frankfurt Core 1"
-                  asn: 64512
-                paths:
-                  - best: true
-                    as_path: [15169]
-                    next_hop: "198.51.100.1"
-                    origin: igp
-                    med: 0
-                    local_pref: 100
-                    communities:
-                      - type: standard
-                        value: "64512:100"
-                    extended_communities: []
-                    large_communities: []
-                    aggregator: null
-                    atomic_aggregate: false
-                plain_text: |
-                  BGP routing table entry for 8.8.8.0/24
-                  Target: Frankfurt Core 1 (AS64512)
-
-                  Path #1 (best)
-                    AS Path: 15169
-                    Next Hop: 198.51.100.1
-                    Origin: IGP
-                    MED: 0
-                    Local Pref: 100
-                    Communities: 64512:100
-                meta:
-                  match_type: exact
-                  data_updated_at: "2026-02-18T12:34:56Z"
-                  stale: false
-                  collector_status: online
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
-        "429":
-          $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
 
   # --------------------------------------------------------------------------
-  # Ping
+  # Route History (API-only, no frontend UI)
   # --------------------------------------------------------------------------
-  /api/v1/targets/{targetId}/ping:
-    post:
-      operationId: ping
-      summary: Ping from a collector
+  /api/v1/routers/{routerId}/routes/history:
+    get:
+      operationId: getRouteHistory
+      summary: Route change history for a prefix
       description: |
-        Executes a ping from the collector that owns the given LG target and
-        streams results back as Server-Sent Events.
+        Returns historical route events (announcements and withdrawals) for a
+        given prefix on the selected router. Results are ordered by time
+        descending (most recent first).
 
-        ### SSE event types
-
-        | event | payload |
-        |-------|---------|
-        | `reply` | `{ "seq": 1, "rtt_ms": 12.34, "ttl": 56, "success": true }` |
-        | `summary` | `{ "packets_sent": 5, "packets_received": 5, "loss_pct": 0, "rtt_min_ms": 10.1, "rtt_avg_ms": 12.3, "rtt_max_ms": 15.0 }` |
-        | `error` | `{ "code": "...", "message": "..." }` |
-        | `complete` | `{}` |
-
-        **Rate limited** -- shares the global 1 req / 30 s / client IP budget.
-      tags: [diagnostics]
+        The `route_events` table is partitioned by day on `ingest_time`. Always
+        include time bounds for efficient queries. Default range is last 24 hours.
+      tags: [routes]
       parameters:
-        - $ref: "#/components/parameters/TargetId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PingRequest"
-            example:
-              destination: "8.8.8.8"
-              count: 5
-              timeout_ms: 5000
+        - $ref: "#/components/parameters/RouterId"
+        - name: prefix
+          in: query
+          required: true
+          description: CIDR prefix to look up history for (e.g. `10.100.0.0/24`).
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: Start time (ISO 8601). Defaults to 24 hours ago.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: End time (ISO 8601). Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of events to return. Default 100, max 1000.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
       responses:
         "200":
-          description: |
-            SSE stream of ping results. The response body is a series of
-            Server-Sent Events, not a single JSON object.
+          description: Route history events.
           content:
-            text/event-stream:
+            application/json:
               schema:
-                description: |
-                  Server-Sent Events stream. Each message has an `event` field
-                  (one of `reply`, `summary`, `error`, `complete`) and a `data`
-                  field containing a JSON object. See operation description for
-                  payload schemas.
-                type: string
-              example: |
-                event: reply
-                data: {"seq":1,"rtt_ms":12.34,"ttl":56,"success":true}
-
-                event: reply
-                data: {"seq":2,"rtt_ms":11.02,"ttl":56,"success":true}
-
-                event: summary
-                data: {"packets_sent":2,"packets_received":2,"loss_pct":0,"rtt_min_ms":11.02,"rtt_avg_ms":11.68,"rtt_max_ms":12.34}
-
-                event: complete
-                data: {}
+                $ref: "#/components/schemas/RouteHistoryResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
-        "429":
-          $ref: "#/components/responses/RateLimitError"
         "500":
           $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
-
-  # --------------------------------------------------------------------------
-  # Traceroute
-  # --------------------------------------------------------------------------
-  /api/v1/targets/{targetId}/traceroute:
-    post:
-      operationId: traceroute
-      summary: Traceroute from a collector
-      description: |
-        Executes a traceroute from the collector that owns the given LG target
-        and streams results back as Server-Sent Events. Hop addresses are raw
-        IPs (no DNS resolution).
-
-        ### SSE event types
-
-        | event | payload |
-        |-------|---------|
-        | `hop` | `{ "hop_number": 1, "address": "198.51.100.1", "rtt_ms": [12.3, 11.8, 13.1] }` |
-        | `error` | `{ "code": "...", "message": "..." }` |
-        | `complete` | `{ "reached_destination": true }` |
-
-        A hop with `"address": "*"` and empty `rtt_ms` indicates a
-        non-responding hop.
-
-        **Rate limited** -- shares the global 1 req / 30 s / client IP budget.
-      tags: [diagnostics]
-      parameters:
-        - $ref: "#/components/parameters/TargetId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TracerouteRequest"
-            example:
-              destination: "8.8.8.8"
-              max_hops: 30
-              timeout_ms: 5000
-      responses:
-        "200":
-          description: |
-            SSE stream of traceroute hops. The response body is a series of
-            Server-Sent Events, not a single JSON object.
-          content:
-            text/event-stream:
-              schema:
-                description: |
-                  Server-Sent Events stream. Each message has an `event` field
-                  (one of `hop`, `error`, `complete`) and a `data` field
-                  containing a JSON object. See operation description for
-                  payload schemas.
-                type: string
-              example: |
-                event: hop
-                data: {"hop_number":1,"address":"198.51.100.1","rtt_ms":[12.3,11.8,13.1]}
-
-                event: hop
-                data: {"hop_number":2,"address":"203.0.113.5","rtt_ms":[22.1,21.9,23.0]}
-
-                event: hop
-                data: {"hop_number":3,"address":"*","rtt_ms":[]}
-
-                event: hop
-                data: {"hop_number":4,"address":"8.8.8.8","rtt_ms":[30.2,29.8,31.0]}
-
-                event: complete
-                data: {"reached_destination":true}
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/ValidationError"
-        "429":
-          $ref: "#/components/responses/RateLimitError"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/ServiceUnavailable"
 
 # ==========================================================================
 # Components
@@ -433,28 +251,14 @@ components:
   # Parameters
   # --------------------------------------------------------------------------
   parameters:
-    TargetId:
-      name: targetId
+    RouterId:
+      name: routerId
       in: path
       required: true
-      description: Unique identifier of the LG target (router session).
+      description: Router identifier (matches `routers.router_id` in the database).
       schema:
         type: string
-      example: "tgt-fra-core1"
-
-  # --------------------------------------------------------------------------
-  # Headers
-  # --------------------------------------------------------------------------
-  headers:
-    RetryAfter:
-      description: |
-        Number of seconds the client should wait before retrying. Present on
-        429 responses and optionally on successful rate-limited responses to
-        indicate remaining cooldown.
-      required: false
-      schema:
-        type: integer
-        minimum: 0
+      example: "10.0.0.2"
 
   # --------------------------------------------------------------------------
   # Schemas
@@ -465,95 +269,83 @@ components:
       type: object
       required:
         - status
-        - collector_count
-        - connected_collectors
+        - router_count
+        - online_routers
         - total_routes
         - uptime_seconds
       properties:
         status:
           type: string
           enum: [healthy, degraded, unhealthy]
-          description: Overall system health.
-        collector_count:
-          type: integer
-          description: Total number of registered collectors.
-        connected_collectors:
-          type: integer
-          description: Number of collectors currently connected.
-        total_routes:
-          type: integer
-          description: Sum of routes across all LG targets.
-        uptime_seconds:
-          type: integer
-          description: Seconds since the central API process started.
-
-    # -- Collector -----------------------------------------------------------
-    Collector:
-      type: object
-      required:
-        - id
-        - location
-        - status
-        - router_count
-      properties:
-        id:
-          type: string
-          description: Unique collector identifier.
-        location:
-          type: string
-          description: Human-readable location name (e.g. "Frankfurt, DE").
-        status:
-          type: string
-          enum: [online, offline]
-          description: Current connection status of the collector.
+          description: |
+            Overall system health. "healthy" = all online routers have received
+            End-of-RIB. "degraded" = some routers still syncing. "unhealthy" =
+            no online routers or database unreachable.
         router_count:
           type: integer
-          description: Number of LG targets (router sessions) at this collector.
+          description: Total number of known routers.
+        online_routers:
+          type: integer
+          description: Routers with active BMP sessions.
+        total_routes:
+          type: integer
+          description: Total routes across all routers (from materialized view).
+        uptime_seconds:
+          type: integer
+          description: Seconds since the API server started.
 
-    # -- LG Target -----------------------------------------------------------
-    CollectorSummary:
+    # -- Router --------------------------------------------------------------
+    Router:
       type: object
       required:
         - id
-        - location
-      properties:
-        id:
-          type: string
-        location:
-          type: string
-      description: Abbreviated collector reference embedded in target objects.
-
-    LGTarget:
-      type: object
-      required:
-        - id
-        - collector
         - display_name
-        - asn
         - status
-        - last_update
+        - eor_received
+        - first_seen
+        - last_seen
       properties:
         id:
           type: string
-          description: Unique LG target identifier.
-        collector:
-          $ref: "#/components/schemas/CollectorSummary"
+          description: Router identifier (BGP Router ID).
+        router_ip:
+          type: string
+          nullable: true
+          description: IP address the router connected from.
+        hostname:
+          type: string
+          nullable: true
+          description: Router hostname from BMP sysName.
         display_name:
           type: string
-          description: Operator-assigned name (e.g. "Frankfurt Core 1").
-        asn:
+          description: Human-friendly name (hostname or router_id).
+        as_number:
           type: integer
-          description: Autonomous System Number of the router.
+          nullable: true
+          description: Router's autonomous system number.
+        description:
+          type: string
+          nullable: true
+          description: Router description from BMP sysDescr.
         status:
           type: string
-          enum: [up, down, unknown]
-          description: BGP session status.
-        last_update:
+          enum: [up, down]
+          description: |
+            "up" if the router has an active BMP session (rib_sync_status row
+            exists), "down" if the session has terminated.
+        eor_received:
+          type: boolean
+          description: Whether End-of-RIB has been received for this router.
+        first_seen:
           type: string
           format: date-time
-          description: Timestamp of the most recent route data received from this target.
+          description: When this router was first observed.
+        last_seen:
+          type: string
+          format: date-time
+          description: When the last BMP session initiation was received.
 
-    # -- BGP Path ------------------------------------------------------------
+    # -- Route ---------------------------------------------------------------
     Community:
       type: object
       required:
@@ -563,60 +355,67 @@ components:
         type:
           type: string
           enum: [standard, extended, large]
-          description: Community encoding type.
         value:
           type: string
           description: |
-            Human-readable community string.
-            Standard: "ASN:value" (e.g. "64512:100").
-            Extended: "type:admin:assigned" (e.g. "rt:64512:1000").
-            Large: "global:local1:local2" (e.g. "64512:1:2").
+            Community string value. Standard: "ASN:value". Extended: "RT:ASN:value"
+            or "SOO:ASN:value". Large: "GA:LD1:LD2".
 
-    BGPPath:
+    Route:
       type: object
       required:
-        - best
-        - filtered
-        - stale
+        - prefix
+        - path_id
         - as_path
-        - next_hop
         - origin
         - communities
         - extended_communities
         - large_communities
-        - atomic_aggregate
+        - first_seen
+        - updated_at
       properties:
-        best:
-          type: boolean
-          description: |
-            True if this is the best path as exported by the router to the
-            looking glass session.
-        filtered:
-          type: boolean
-          description: Path was denied by an inbound or outbound route policy.
-        stale:
-          type: boolean
-          description: Path was not refreshed after a graceful restart.
-        as_path:
-          type: array
-          items:
-            type: integer
-          description: Ordered list of AS numbers in the path (origin AS last).
+        prefix:
+          type: string
+          description: Network prefix in CIDR notation.
+        path_id:
+          type: integer
+          description: BGP Add-Path identifier. 0 when Add-Path is not in use.
         next_hop:
           type: string
-          description: Next-hop IP address.
+          nullable: true
+          description: BGP next-hop address.
+        as_path:
+          description: |
+            AS path as an array. Each element is either an integer (AS number) or
+            an array of integers (AS_SET).
+          oneOf:
+            - type: array
+              items:
+                type: integer
+            - type: array
+              items:
+                oneOf:
+                  - type: integer
+                  - type: array
+                    items:
+                      type: integer
         origin:
           type: string
           enum: [igp, egp, incomplete]
-          description: BGP origin attribute.
-        med:
-          type: integer
           nullable: true
-          description: Multi-Exit Discriminator. Null if not present.
+          description: BGP origin attribute (lowercased).
         local_pref:
           type: integer
           nullable: true
-          description: Local Preference. Null if not present (e.g. eBGP-learned).
+          description: LOCAL_PREF value.
+        med:
+          type: integer
+          nullable: true
+          description: Multi-Exit Discriminator.
+        origin_asn:
+          type: integer
+          nullable: true
+          description: Last ASN in as_path (the origin AS). Null if path is empty or ends with AS_SET.
         communities:
           type: array
           items:
@@ -626,228 +425,171 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Community"
-          description: Extended BGP communities (route targets, etc.).
+          description: Extended BGP communities.
         large_communities:
           type: array
           items:
             $ref: "#/components/schemas/Community"
-          description: Large BGP communities (RFC 8092).
-        aggregator:
+          description: Large BGP communities.
+        attrs:
           type: object
           nullable: true
-          properties:
-            asn:
-              type: integer
-            address:
-              type: string
-          description: Aggregator attribute. Null if not present.
-        atomic_aggregate:
-          type: boolean
-          description: Whether the atomic-aggregate attribute is set.
+          description: Extra BGP path attributes not mapped to dedicated fields.
+        first_seen:
+          type: string
+          format: date-time
+          description: When this route was first inserted.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last time this route was updated.
 
     # -- Route Lookup Response -----------------------------------------------
-    TargetSummary:
+    RouterSummary:
       type: object
       required:
         - id
         - display_name
-        - asn
+        - as_number
       properties:
         id:
           type: string
         display_name:
           type: string
-        asn:
+        as_number:
           type: integer
-      description: Abbreviated target reference embedded in route lookup results.
+          nullable: true
 
     RouteLookupMeta:
       type: object
       required:
         - match_type
-        - data_updated_at
-        - stale
-        - collector_status
+        - router_status
       properties:
         match_type:
           type: string
           enum: [exact, longest]
-          description: The match type that was actually applied.
-        data_updated_at:
+          description: The match type that was applied.
+        router_status:
           type: string
-          format: date-time
-          description: Timestamp of the most recent route data update for this target.
-        stale:
-          type: boolean
-          description: True if the data may be outdated due to collector disconnection.
-        collector_status:
-          type: string
-          enum: [online, offline]
-          description: Current connection status of the collector serving this target.
+          enum: [up, down]
+          description: Current BMP session status of the router.
 
     RouteLookupResponse:
       type: object
       required:
         - prefix
-        - target
-        - paths
-        - plain_text
+        - router
+        - routes
         - meta
       properties:
         prefix:
           type: string
           description: The matched prefix in CIDR notation.
-        target:
-          $ref: "#/components/schemas/TargetSummary"
-        paths:
+        router:
+          $ref: "#/components/schemas/RouterSummary"
+        routes:
           type: array
           items:
-            $ref: "#/components/schemas/BGPPath"
-          description: All BGP paths for the matched prefix on this target.
+            $ref: "#/components/schemas/Route"
+          description: All routes for the matched prefix on this router.
         plain_text:
           type: string
-          description: Pre-formatted plain-text rendering of the results, suitable for copy-to-clipboard.
+          description: Pre-formatted plain-text rendering for copy-to-clipboard.
         meta:
           $ref: "#/components/schemas/RouteLookupMeta"
 
-    # -- Diagnostic Requests -------------------------------------------------
-    PingRequest:
+    # -- Route History Response ----------------------------------------------
+    RouteEvent:
       type: object
       required:
-        - destination
+        - timestamp
+        - action
+        - prefix
       properties:
-        destination:
+        timestamp:
           type: string
-          description: IPv4 or IPv6 destination address.
-        count:
-          type: integer
-          minimum: 1
-          maximum: 10
-          default: 5
-          description: Number of ICMP echo requests to send.
-        timeout_ms:
-          type: integer
-          minimum: 1000
-          maximum: 10000
-          default: 5000
-          description: Per-packet timeout in milliseconds.
-
-    TracerouteRequest:
-      type: object
-      required:
-        - destination
-      properties:
-        destination:
+          format: date-time
+          description: When the event was recorded (ingest_time).
+        action:
           type: string
-          description: IPv4 or IPv6 destination address.
-        max_hops:
-          type: integer
-          minimum: 1
-          maximum: 64
-          default: 30
-          description: Maximum number of hops.
-        timeout_ms:
-          type: integer
-          minimum: 1000
-          maximum: 10000
-          default: 5000
-          description: Per-hop timeout in milliseconds.
-
-    # -- SSE Event Payloads (documented for codegen / client reference) ------
-    PingReplyEvent:
-      type: object
-      required:
-        - seq
-        - rtt_ms
-        - ttl
-        - success
-      properties:
-        seq:
-          type: integer
-          description: ICMP sequence number.
-        rtt_ms:
-          type: number
-          format: double
-          description: Round-trip time in milliseconds. Zero if the packet was lost.
-        ttl:
-          type: integer
-          description: IP TTL of the reply packet. Zero if the packet was lost.
-        success:
-          type: boolean
-          description: True if an echo reply was received.
-
-    PingSummaryEvent:
-      type: object
-      required:
-        - packets_sent
-        - packets_received
-        - loss_pct
-        - rtt_min_ms
-        - rtt_avg_ms
-        - rtt_max_ms
-      properties:
-        packets_sent:
-          type: integer
-        packets_received:
-          type: integer
-        loss_pct:
-          type: number
-          format: double
-          description: Packet loss percentage (0-100).
-        rtt_min_ms:
-          type: number
-          format: double
-        rtt_avg_ms:
-          type: number
-          format: double
-        rtt_max_ms:
-          type: number
-          format: double
-
-    TracerouteHopEvent:
-      type: object
-      required:
-        - hop_number
-        - address
-        - rtt_ms
-      properties:
-        hop_number:
-          type: integer
-          description: Hop number (1-based, incrementing from source).
-        address:
+          enum: [announce, withdraw]
+          description: '"announce" for route add/update, "withdraw" for removal.'
+        prefix:
           type: string
-          description: |
-            IP address of the responding node. "*" if the hop did not respond.
-        rtt_ms:
+          description: Affected prefix in CIDR notation.
+        path_id:
+          type: integer
+          nullable: true
+          description: Add-Path identifier. Null when not applicable.
+        next_hop:
+          type: string
+          nullable: true
+          description: Next-hop for announcements. Null for withdrawals.
+        as_path:
+          type: array
+          nullable: true
+          items:
+            oneOf:
+              - type: integer
+              - type: array
+                items:
+                  type: integer
+          description: AS path at time of event. Null for withdrawals.
+        origin:
+          type: string
+          nullable: true
+        local_pref:
+          type: integer
+          nullable: true
+        med:
+          type: integer
+          nullable: true
+        origin_asn:
+          type: integer
+          nullable: true
+        communities:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/Community"
+        extended_communities:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/Community"
+        large_communities:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/Community"
+
+    RouteHistoryResponse:
+      type: object
+      required:
+        - router_id
+        - prefix
+        - events
+      properties:
+        router_id:
+          type: string
+        prefix:
+          type: string
+        from:
+          type: string
+          format: date-time
+          description: Start of the time range queried.
+        to:
+          type: string
+          format: date-time
+          description: End of the time range queried.
+        events:
           type: array
           items:
-            type: number
-            format: double
-          description: |
-            Round-trip times for each probe at this hop. Empty array if the hop
-            did not respond.
-
-    TracerouteCompleteEvent:
-      type: object
-      required:
-        - reached_destination
-      properties:
-        reached_destination:
+            $ref: "#/components/schemas/RouteEvent"
+        has_more:
           type: boolean
-          description: True if the traceroute reached the destination before max hops.
-
-    SSEErrorEvent:
-      type: object
-      required:
-        - code
-        - message
-      properties:
-        code:
-          type: string
-          description: Machine-readable error code.
-        message:
-          type: string
-          description: Human-readable error description.
+          description: True if more events exist beyond the limit.
 
     # -- Error Responses (RFC 7807) ------------------------------------------
     ProblemDetail:
@@ -860,62 +602,28 @@ components:
         type:
           type: string
           format: uri
-          description: |
-            A URI reference that identifies the problem type. "about:blank" when
-            no further semantics beyond the status code are needed.
           default: "about:blank"
         title:
           type: string
-          description: Short human-readable summary of the problem type.
         status:
           type: integer
-          description: HTTP status code.
         detail:
           type: string
-          description: Human-readable explanation specific to this occurrence.
         instance:
           type: string
           format: uri
-          description: URI reference identifying this specific occurrence.
-
-    RateLimitError:
-      description: |
-        Returned when the client has exceeded the rate limit. Extends
-        ProblemDetail with a `retry_after` field.
-      allOf:
-        - $ref: "#/components/schemas/ProblemDetail"
-        - type: object
-          required:
-            - retry_after
-          properties:
-            retry_after:
-              type: integer
-              description: Seconds the client must wait before the next request.
-
-    ValidationError:
-      description: |
-        Returned when request parameters fail validation. Extends ProblemDetail
-        with an `invalid_params` array.
-      allOf:
-        - $ref: "#/components/schemas/ProblemDetail"
-        - type: object
-          required:
-            - invalid_params
-          properties:
-            invalid_params:
-              type: array
-              items:
-                type: object
-                required:
-                  - name
-                  - reason
-                properties:
-                  name:
-                    type: string
-                    description: Name of the invalid parameter.
-                  reason:
-                    type: string
-                    description: Why the parameter is invalid.
+        invalid_params:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - reason
+            properties:
+              name:
+                type: string
+              reason:
+                type: string
 
   # --------------------------------------------------------------------------
   # Reusable Responses
@@ -927,11 +635,6 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/ProblemDetail"
-          example:
-            type: "about:blank"
-            title: Bad Request
-            status: 400
-            detail: "Request body is not valid JSON."
 
     NotFound:
       description: The requested resource does not exist.
@@ -943,40 +646,22 @@ components:
             type: "about:blank"
             title: Not Found
             status: 404
-            detail: "LG target 'tgt-xxx' does not exist."
+            detail: "Router '10.0.0.99' does not exist."
 
     ValidationError:
       description: One or more request parameters are invalid.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/ValidationError"
+            $ref: "#/components/schemas/ProblemDetail"
           example:
             type: "about:blank"
             title: Unprocessable Entity
             status: 422
             detail: "Request validation failed."
             invalid_params:
-              - name: destination
-                reason: "Address 192.168.1.1 is in a restricted private range (RFC 1918)."
-              - name: count
-                reason: "Must be between 1 and 10."
-
-    RateLimitError:
-      description: Rate limit exceeded.
-      headers:
-        Retry-After:
-          $ref: "#/components/headers/RetryAfter"
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/RateLimitError"
-          example:
-            type: "about:blank"
-            title: Too Many Requests
-            status: 429
-            detail: "Rate limit exceeded. Try again in 24 seconds."
-            retry_after: 24
+              - name: prefix
+                reason: "Not a valid IPv4 or IPv6 prefix."
 
     InternalError:
       description: An unexpected server error occurred.
@@ -988,29 +673,12 @@ components:
             type: "about:blank"
             title: Internal Server Error
             status: 500
-            detail: "An unexpected error occurred. Please try again later."
-
-    ServiceUnavailable:
-      description: |
-        The target's collector is currently offline or the system is degraded.
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/ProblemDetail"
-          example:
-            type: "about:blank"
-            title: Service Unavailable
-            status: 503
-            detail: "Collector 'col-fra-01' is currently offline."
+            detail: "An unexpected error occurred."
 
 tags:
   - name: health
     description: System health and status.
-  - name: collectors
-    description: Collector (data center location) management.
-  - name: targets
-    description: LG target (router session) browsing and details.
+  - name: routers
+    description: Monitored BGP router listing and details.
   - name: routes
-    description: BGP route lookup.
-  - name: diagnostics
-    description: Ping and traceroute from collector vantage points.
+    description: BGP route lookup and history.

@@ -1,6 +1,5 @@
 # Go
 bin/
-spike/
 *.exe
 *.exe~
 *.dll
@@ -9,47 +8,11 @@ spike/
 *.out
 vendor/
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-coverage/
 
 # Local development
 *.log
@@ -57,7 +20,6 @@ coverage/
 .env.*
 !.env.example
 *.local
-REVIEW.md
 
 # Node.js / Frontend
 node_modules/
@@ -67,19 +29,11 @@ yarn-error.log*
 pnpm-lock.yaml
 
 # Frontend build
-frontend/dist/
-frontend/build/
+web/dist/
 *.tsbuildinfo
-
-# Database
-*.sqlite
-*.db
 
 # Docker
 .docker/
-
-# Alembic
-backend/alembic/versions/__pycache__/
 
 # Secrets (never commit)
 *.pem
@@ -98,7 +52,3 @@ CLAUDE.md
 .specify/
 specs/
 prompts/
-
-# Celery
-celerybeat-schedule
-celerybeat-schedule.db

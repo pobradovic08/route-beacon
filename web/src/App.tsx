@@ -171,12 +171,16 @@ export default function App() {
                 <Tabs.Tab
                   value="ping"
                   leftSection={<IconPingPong size={16} />}
+                  disabled
+                  style={{ opacity: 0.5 }}
                 >
                   Ping
                 </Tabs.Tab>
                 <Tabs.Tab
                   value="traceroute"
                   leftSection={<IconArrowsShuffle size={16} />}
+                  disabled
+                  style={{ opacity: 0.5 }}
                 >
                   Traceroute
                 </Tabs.Tab>

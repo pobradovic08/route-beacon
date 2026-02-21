@@ -2,11 +2,10 @@
 .claude
 .specify
 specs
-prompts
 web/node_modules
 web/dist
 *.exe
 *.test
 *.out
-central
-collector
+*.md
+!README.md
