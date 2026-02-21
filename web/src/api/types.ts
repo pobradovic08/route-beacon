@@ -26,7 +26,7 @@ export interface Target {
   id: string;
   collector: TargetCollector;
   display_name: string;
-  asn: number;
+  asn: number | null;
   status: "up" | "down" | "unknown";
   last_update: string;
 }
@@ -49,7 +49,7 @@ export interface RoutePath {
   best: boolean;
   filtered: boolean;
   stale: boolean;
-  as_path: number[];
+  as_path: (number | number[])[];
   next_hop: string;
   origin: "igp" | "egp" | "incomplete";
   med: number | null;
@@ -78,7 +78,7 @@ export interface RouteLookupResponse {
   target: {
     id: string;
     display_name: string;
-    asn: number;
+    asn: number | null;
   };
   paths: RoutePath[];
   plain_text: string;

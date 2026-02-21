@@ -16,7 +16,7 @@ export function TargetSelector({
 }: TargetSelectorProps) {
   const data = targets.map((t) => ({
     value: t.id,
-    label: `${t.display_name} — AS${t.asn}`,
+    label: t.asn != null ? `${t.display_name} — AS${t.asn}` : t.display_name,
   }));
 
   return (
@@ -57,7 +57,7 @@ export function TargetSelector({
                 ff="monospace"
                 style={{ color: "var(--rb-text-secondary)" }}
               >
-                AS{target?.asn} · {target?.collector.location}
+                {target?.asn != null ? `AS${target.asn}` : "Unknown ASN"} · {target?.collector.location}
               </Text>
             </div>
           </Group>

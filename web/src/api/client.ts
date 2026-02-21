@@ -1,9 +1,7 @@
 import type {
   HealthResponse,
-  CollectorsResponse,
   TargetsResponse,
   RouteLookupResponse,
-  RoutePath,
   ProblemDetail,
 } from "./types";
 
@@ -40,93 +38,165 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export const api = {
-  health: () => request<HealthResponse>("/health"),
-  collectors: () => request<CollectorsResponse>("/collectors"),
-  targets: () => request<TargetsResponse>("/targets"),
+// API Router shape from the backend
+interface ApiRouter {
+  id: string;
+  router_ip: string | null;
+  hostname: string | null;
+  display_name: string;
+  as_number: number | null;
+  description: string | null;
+  status: "up" | "down";
+  eor_received: boolean;
+  first_seen: string;
+  last_seen: string;
+}
 
-  lookupRoutes: (
+interface ApiRouterListResponse {
+  data: ApiRouter[];
+}
+
+// API Route shape from the backend
+interface ApiRoute {
+  prefix: string;
+  path_id: number;
+  next_hop: string | null;
+  as_path: (number | number[])[];
+  origin: "igp" | "egp" | "incomplete" | null;
+  local_pref: number | null;
+  med: number | null;
+  origin_asn: number | null;
+  communities: { type: string; value: string }[];
+  extended_communities: { type: string; value: string }[];
+  large_communities: { type: string; value: string }[];
+  attrs: Record<string, unknown> | null;
+  first_seen: string;
+  updated_at: string;
+}
+
+interface ApiRouteLookupResponse {
+  prefix: string;
+  router: { id: string; display_name: string; as_number: number | null };
+  routes: ApiRoute[];
+  plain_text: string;
+  meta: { match_type: "exact" | "longest"; router_status: "up" | "down" };
+}
+
+// API Health shape from the backend
+interface ApiHealthResponse {
+  status: "healthy" | "degraded" | "unhealthy";
+  router_count: number;
+  online_routers: number;
+  total_routes: number;
+  uptime_seconds: number;
+}
+
+function mapHealthResponse(api: ApiHealthResponse): HealthResponse {
+  return {
+    status: api.status,
+    collector_count: api.router_count,
+    connected_collectors: api.online_routers,
+    total_routes: api.total_routes,
+    uptime_seconds: api.uptime_seconds,
+  };
+}
+
+function mapRoutersToTargets(apiRouters: ApiRouter[]): TargetsResponse {
+  return {
+    data: apiRouters.map((r) => ({
+      id: r.id,
+      collector: { id: r.id, location: r.description || "" },
+      display_name: r.display_name,
+      asn: r.as_number,
+      status: r.status === "up" ? ("up" as const) : ("down" as const),
+      last_update: r.last_seen,
+    })),
+  };
+}
+
+function mapRouteLookupResponse(api: ApiRouteLookupResponse): RouteLookupResponse {
+  const latestUpdate = api.routes.length > 0
+    ? api.routes.reduce((latest, r) =>
+        r.updated_at > latest ? r.updated_at : latest, api.routes[0].updated_at)
+    : new Date().toISOString();
+
+  return {
+    prefix: api.prefix,
+    target: {
+      id: api.router.id,
+      display_name: api.router.display_name,
+      asn: api.router.as_number,
+    },
+    paths: api.routes.map((route) => ({
+      best: route.path_id === 0,
+      filtered: false,
+      stale: false,
+      as_path: route.as_path,
+      next_hop: route.next_hop ?? "",
+      origin: route.origin ?? "incomplete",
+      local_pref: route.local_pref,
+      med: route.med,
+      communities: route.communities.map((c) => ({
+        type: c.type as "standard" | "extended" | "large",
+        value: c.value,
+      })),
+      extended_communities: route.extended_communities.map((c) => ({
+        type: c.type as "standard" | "extended" | "large",
+        value: c.value,
+      })),
+      large_communities: route.large_communities.map((c) => ({
+        type: c.type as "standard" | "extended" | "large",
+        value: c.value,
+      })),
+      aggregator: route.attrs?.aggregator
+        ? (route.attrs.aggregator as { asn: number; address: string })
+        : null,
+      atomic_aggregate: route.attrs?.atomic_aggregate === true,
+    })),
+    plain_text: api.plain_text,
+    meta: {
+      match_type: api.meta.match_type,
+      data_updated_at: latestUpdate,
+      stale: false,
+      collector_status: api.meta.router_status === "up" ? "online" : "offline",
+    },
+    pagination: null,
+  };
+}
+
+export const api = {
+  health: async (): Promise<HealthResponse> => {
+    const data = await request<ApiHealthResponse>("/health");
+    return mapHealthResponse(data);
+  },
+
+  routers: () => request<ApiRouterListResponse>("/routers"),
+
+  targets: async (): Promise<TargetsResponse> => {
+    const data = await request<ApiRouterListResponse>("/routers");
+    return mapRoutersToTargets(data.data);
+  },
+
+  lookupRoutes: async (
     targetId: string,
     prefix: string,
     matchType?: "exact" | "longest",
   ): Promise<RouteLookupResponse> => {
-    if (prefix === "10.1.0.0/24") return Promise.resolve(MOCK_MULTI_PATH);
     const params = new URLSearchParams({ prefix });
     if (matchType) params.set("match_type", matchType);
-    return request<RouteLookupResponse>(
-      `/targets/${encodeURIComponent(targetId)}/routes/lookup?${params}`,
+    const data = await request<ApiRouteLookupResponse>(
+      `/routers/${encodeURIComponent(targetId)}/routes/lookup?${params}`,
     );
+    return mapRouteLookupResponse(data);
   },
 
   ping: (
-    targetId: string,
-    body: { destination: string; count?: number; timeout_ms?: number },
-  ) =>
-    fetch(`${BASE}/targets/${encodeURIComponent(targetId)}/ping`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+    _targetId: string,
+    _body: { destination: string; count?: number; timeout_ms?: number },
+  ) => Promise.reject(new Error("Diagnostics unavailable")),
 
   traceroute: (
-    targetId: string,
-    body: { destination: string; max_hops?: number; timeout_ms?: number },
-  ) =>
-    fetch(`${BASE}/targets/${encodeURIComponent(targetId)}/traceroute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-};
-
-const mockPath = (
-  best: boolean,
-  asPath: number[],
-  nextHop: string,
-  origin: RoutePath["origin"],
-  localPref: number | null,
-  med: number | null,
-  communities: string[],
-): RoutePath => ({
-  best,
-  filtered: false,
-  stale: false,
-  as_path: asPath,
-  next_hop: nextHop,
-  origin,
-  local_pref: localPref,
-  med,
-  communities: communities.map((v) => ({ type: "standard", value: v })),
-  extended_communities: [],
-  large_communities: [],
-  aggregator: null,
-  atomic_aggregate: false,
-});
-
-const MOCK_MULTI_PATH: RouteLookupResponse = {
-  prefix: "10.1.0.0/24",
-  target: { id: "mock-fra1", display_name: "DE-CIX Frankfurt", asn: 64513 },
-  paths: [
-    mockPath(true, [64513, 174, 13335], "172.28.0.10", "igp", 200, null, [
-      "174:100", "174:3000", "13335:10",
-    ]),
-    mockPath(false, [64514, 6939, 13335], "172.28.0.11", "igp", 150, 50, [
-      "6939:100", "6939:6939", "13335:10",
-    ]),
-    mockPath(false, [64515, 3356, 1299, 13335], "172.28.0.12", "igp", 100, 120, [
-      "3356:3", "3356:22", "1299:20000",
-    ]),
-    mockPath(false, [64516, 2914, 13335], "172.28.0.13", "egp", 100, null, []),
-    mockPath(false, [64517, 9002, 6939, 13335], "172.28.0.14", "incomplete", 80, 200, [
-      "9002:64800", "6939:100", "13335:10", "65000:100",
-    ]),
-  ],
-  plain_text: "",
-  meta: {
-    match_type: "exact",
-    data_updated_at: new Date().toISOString(),
-    stale: false,
-    collector_status: "online",
-  },
-  pagination: null,
+    _targetId: string,
+    _body: { destination: string; max_hops?: number; timeout_ms?: number },
+  ) => Promise.reject(new Error("Diagnostics unavailable")),
 };
