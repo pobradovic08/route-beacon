@@ -213,7 +213,8 @@ function RouteResult({ result }: { result: RouteLookupResponse }) {
               })}
             </Table.Tbody>
           </Table>
-          <StatusLegend />
+          <AsPathLegend />
+          <CommunityLegend />
           </>
         )}
       </Stack>
@@ -221,37 +222,6 @@ function RouteResult({ result }: { result: RouteLookupResponse }) {
   );
 }
 
-const STATUS_CODES = [
-  { code: "B", label: "Best", desc: "Selected as the preferred path to the destination", color: "green", variant: "filled" as const },
-  { code: "F", label: "Filtered", desc: "Denied by an inbound or outbound route policy", color: "red", variant: "filled" as const },
-  { code: "s", label: "Stale", desc: "Not refreshed after a graceful restart", color: "yellow", variant: "filled" as const },
-];
-
-function StatusLegend() {
-  return (
-    <Stack gap={4}>
-      {STATUS_CODES.map(({ code, label, desc, color, variant }) => (
-        <Group key={code} gap={6} wrap="nowrap">
-          <Badge
-            size="sm"
-            variant={variant}
-            color={color}
-            ff="monospace"
-            styles={{ label: { textTransform: "none", fontWeight: 700, minWidth: 14, textAlign: "center" } }}
-          >
-            {code}
-          </Badge>
-          <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
-            {label}
-          </Text>
-          <Text size="xs" fw={400} style={{ color: "var(--rb-muted)" }}>
-            — {desc}
-          </Text>
-        </Group>
-      ))}
-    </Stack>
-  );
-}
 
 function collapseAsPath(segments: (number | number[])[]) {
   const result: { label: string; count: number }[] = [];
@@ -267,14 +237,70 @@ function collapseAsPath(segments: (number | number[])[]) {
   return result;
 }
 
-function isPrivateAsn(label: string): boolean {
-  const n = Number(label);
-  if (isNaN(n)) return false;
+function AsPathLegend() {
+  const items = [
+    { label: "Transit ASN", bg: "rgba(0, 113, 227, 0.08)", border: "var(--rb-accent)", text: "#1d4ed8" },
+    { label: "Origin ASN", bg: "rgba(52, 199, 89, 0.12)", border: "#34c759", text: "#15803d" },
+    { label: "Prepended ASNs (prepend count)", bg: "rgba(255, 159, 10, 0.12)", border: "#ff9f0a", text: "#c2410c" },
+    { label: "Private ASN", bg: "rgba(139, 92, 246, 0.1)", border: "#8b5cf6", text: "#6d28d9" },
+  ];
+  return (
+    <Stack gap={4}>
+      <Text size="xs" fw={600} style={{ color: "var(--rb-muted)", letterSpacing: "0.03em" }}>AS Path Legend</Text>
+      <Group gap={8} wrap="wrap">
+        {items.map((item) => (
+          <Group key={item.label} gap={6} wrap="nowrap">
+            <Box style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              background: item.bg,
+              borderLeft: item.border ? `2px solid ${item.border}` : undefined,
+            }} />
+            <Text size="xs" fw={500} style={{ color: "var(--rb-text-secondary)" }}>{item.label}</Text>
+          </Group>
+        ))}
+      </Group>
+    </Stack>
+  );
+}
+
+function CommunityLegend() {
+  const items = [
+    { label: "Own ASN", color: "blue" },
+    { label: "Private ASN", color: "violet" },
+    { label: "External", color: "red" },
+  ];
+  return (
+    <Stack gap={4}>
+      <Text size="xs" fw={600} style={{ color: "var(--rb-muted)", letterSpacing: "0.03em" }}>Communities Legend</Text>
+      <Group gap={8} wrap="wrap">
+        {items.map((item) => (
+          <Group key={item.label} gap={6} wrap="nowrap">
+            <Badge size="sm" variant="light" color={item.color} styles={{ label: { textTransform: "none" } }}>
+              ···
+            </Badge>
+            <Text size="xs" fw={500} style={{ color: "var(--rb-text-secondary)" }}>{item.label}</Text>
+          </Group>
+        ))}
+      </Group>
+    </Stack>
+  );
+}
+
+function isPrivateAsn(n: number): boolean {
   return (n >= 64512 && n <= 65534) || (n >= 4200000000 && n <= 4294967294);
 }
 
+function communityColor(value: string, routerAsn: number | null): string {
+  const asn = Number(value.split(":")[0]);
+  if (!isNaN(asn) && routerAsn != null && asn === routerAsn) return "blue";
+  if (!isNaN(asn) && isPrivateAsn(asn)) return "violet";
+  return "red";
+}
+
 function AsChevron({ label, first, last, count = 1 }: { label: string; first: boolean; last: boolean; count?: number }) {
-  const priv = isPrivateAsn(label);
+  const priv = isPrivateAsn(Number(label));
   const notch = 6;
   const clipPath = first
     ? `polygon(0 0, calc(100% - ${notch}px) 0, 100% 50%, calc(100% - ${notch}px) 100%, 0 100%)`
@@ -432,18 +458,16 @@ function PathRows({
                   </Text>
                   <Group gap={4} wrap="wrap">
                     {allCommunities.map((v, i) => (
-                      <Box
+                      <Badge
                         key={i}
-                        style={{
-                          background: "rgba(0, 0, 0, 0.04)",
-                          borderRadius: 4,
-                          padding: "2px 6px",
-                        }}
+                        size="md"
+                        variant="light"
+                        color={communityColor(v, target.asn)}
+                        ff="monospace"
+                        styles={{ label: { textTransform: "none", fontWeight: 700 } }}
                       >
-                        <Text size="xs" fw={500} ff="monospace" style={{ color: "var(--rb-text)", lineHeight: 1.4 }}>
-                          {v}
-                        </Text>
-                      </Box>
+                        {v}
+                      </Badge>
                     ))}
                   </Group>
                 </Box>
