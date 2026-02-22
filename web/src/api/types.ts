@@ -26,6 +26,7 @@ export interface Target {
   id: string;
   collector: TargetCollector;
   display_name: string;
+  location: string | null;
   asn: number | null;
   status: "up" | "down" | "unknown";
   last_update: string;
@@ -33,6 +34,28 @@ export interface Target {
 
 export interface TargetsResponse {
   data: Target[];
+}
+
+export interface RouterDetail {
+  id: string;
+  router_ip: string | null;
+  hostname: string | null;
+  display_name: string;
+  as_number: number | null;
+  description: string | null;
+  location: string | null;
+  status: "up" | "down";
+  eor_received: boolean;
+  first_seen: string;
+  last_seen: string;
+  session_start: string | null;
+  sync_updated_at: string | null;
+  route_count: number;
+  unique_prefixes: number;
+  peer_count: number;
+  ipv4_routes: number;
+  ipv6_routes: number;
+  avg_as_path_len: number | null;
 }
 
 export interface Community {

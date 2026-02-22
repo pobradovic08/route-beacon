@@ -1,5 +1,6 @@
 import type {
   HealthResponse,
+  RouterDetail,
   TargetsResponse,
   RouteLookupResponse,
   ProblemDetail,
@@ -46,6 +47,7 @@ interface ApiRouter {
   display_name: string;
   as_number: number | null;
   description: string | null;
+  location: string | null;
   status: "up" | "down";
   eor_received: boolean;
   first_seen: string;
@@ -105,8 +107,9 @@ function mapRoutersToTargets(apiRouters: ApiRouter[]): TargetsResponse {
   return {
     data: apiRouters.map((r) => ({
       id: r.id,
-      collector: { id: r.id, location: r.description || "" },
+      collector: { id: r.id, location: r.location || "" },
       display_name: r.display_name,
+      location: r.location,
       asn: r.as_number,
       status: r.status === "up" ? ("up" as const) : ("down" as const),
       last_update: r.last_seen,
@@ -171,6 +174,13 @@ export const api = {
   },
 
   routers: () => request<ApiRouterListResponse>("/routers"),
+
+  routerDetail: async (routerId: string): Promise<RouterDetail> => {
+    const data = await request<{ data: RouterDetail }>(
+      `/routers/${encodeURIComponent(routerId)}`,
+    );
+    return data.data;
+  },
 
   targets: async (): Promise<TargetsResponse> => {
     const data = await request<ApiRouterListResponse>("/routers");

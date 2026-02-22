@@ -11,37 +11,17 @@ import (
 )
 
 // ListRouters returns all known routers with their online/offline status.
-// Routers are discovered from both the routers table (BMP initiation) and
-// rib_sync_status (active sessions), so routers appear even before the
-// ingester has processed the BMP initiation message.
+// Uses the routers_overview view which joins routers, current_routes, and
+// rib_sync_status automatically.
 func (db *DB) ListRouters(ctx context.Context) ([]model.Router, error) {
 	rows, err := db.Pool.Query(ctx, `
-		WITH known_routers AS (
-			SELECT router_id FROM routers
-			UNION
-			SELECT DISTINCT router_id FROM rib_sync_status
-		)
-		SELECT kr.router_id,
-		       r.router_ip,
-		       r.hostname,
-		       r.as_number,
-		       r.description,
-		       COALESCE(r.first_seen, s_min.session_start) AS first_seen,
-		       COALESCE(r.last_seen, s_min.updated) AS last_seen,
-		       EXISTS(SELECT 1 FROM rib_sync_status s WHERE s.router_id = kr.router_id) AS is_online,
-		       COALESCE(
-		         (SELECT bool_and(s.eor_seen) FROM rib_sync_status s WHERE s.router_id = kr.router_id),
-		         false
-		       ) AS all_eor_received
-		FROM known_routers kr
-		LEFT JOIN routers r ON r.router_id = kr.router_id
-		LEFT JOIN LATERAL (
-			SELECT MIN(session_start_time) AS session_start,
-			       MAX(updated_at) AS updated
-			FROM rib_sync_status s
-			WHERE s.router_id = kr.router_id
-		) s_min ON true
-		ORDER BY kr.router_id
+		SELECT router_id, router_ip, hostname, as_number, description,
+		       display_name, location,
+		       first_seen, last_seen,
+		       route_count > 0 OR session_start_time IS NOT NULL AS is_online,
+		       COALESCE(all_afis_synced, false) AS all_eor_received
+		FROM routers_overview
+		ORDER BY router_id
 	`)
 	if err != nil {
 		return nil, err
@@ -56,19 +36,23 @@ func (db *DB) ListRouters(ctx context.Context) ([]model.Router, error) {
 			hostname    *string
 			asNumber    *int64
 			description *string
+			displayName *string
+			location    *string
 			firstSeen   *time.Time
 			lastSeen    *time.Time
 			isOnline    bool
 			allEOR      bool
 		)
 		if err := rows.Scan(&routerID, &routerIP, &hostname, &asNumber, &description,
-			&firstSeen, &lastSeen, &isOnline, &allEOR); err != nil {
+			&displayName, &location, &firstSeen, &lastSeen, &isOnline, &allEOR); err != nil {
 			return nil, err
 		}
 
-		displayName := routerID
-		if hostname != nil {
-			displayName = *hostname
+		name := routerID
+		if displayName != nil {
+			name = *displayName
+		} else if hostname != nil {
+			name = *hostname
 		}
 
 		status := "down"
@@ -95,9 +79,10 @@ func (db *DB) ListRouters(ctx context.Context) ([]model.Router, error) {
 			ID:          routerID,
 			RouterIP:    ipStr,
 			Hostname:    hostname,
-			DisplayName: displayName,
+			DisplayName: name,
 			ASNumber:    asNumber,
 			Description: description,
+			Location:    location,
 			Status:      status,
 			EORReceived: allEOR,
 			FirstSeen:   fs,
@@ -117,35 +102,23 @@ func (db *DB) GetRouter(ctx context.Context, routerID string) (*model.Router, er
 		hostname    *string
 		asNumber    *int64
 		description *string
+		displayName *string
+		location    *string
 		firstSeen   *time.Time
 		lastSeen    *time.Time
 		isOnline    bool
 		allEOR      bool
 	)
 	err := db.Pool.QueryRow(ctx, `
-		SELECT r.router_ip,
-		       r.hostname,
-		       r.as_number,
-		       r.description,
-		       COALESCE(r.first_seen, s_min.session_start) AS first_seen,
-		       COALESCE(r.last_seen, s_min.updated) AS last_seen,
-		       EXISTS(SELECT 1 FROM rib_sync_status s WHERE s.router_id = $1) AS is_online,
-		       COALESCE(
-		         (SELECT bool_and(s.eor_seen) FROM rib_sync_status s WHERE s.router_id = $1),
-		         false
-		       ) AS all_eor_received
-		FROM (SELECT $1 AS router_id) AS q
-		LEFT JOIN routers r ON r.router_id = q.router_id
-		LEFT JOIN LATERAL (
-			SELECT MIN(session_start_time) AS session_start,
-			       MAX(updated_at) AS updated
-			FROM rib_sync_status s
-			WHERE s.router_id = $1
-		) s_min ON true
-		WHERE r.router_id IS NOT NULL
-		   OR EXISTS(SELECT 1 FROM rib_sync_status s WHERE s.router_id = $1)
+		SELECT router_ip, hostname, as_number, description,
+		       display_name, location,
+		       first_seen, last_seen,
+		       route_count > 0 OR session_start_time IS NOT NULL AS is_online,
+		       COALESCE(all_afis_synced, false) AS all_eor_received
+		FROM routers_overview
+		WHERE router_id = $1
 	`, routerID).Scan(&routerIP, &hostname, &asNumber, &description,
-		&firstSeen, &lastSeen, &isOnline, &allEOR)
+		&displayName, &location, &firstSeen, &lastSeen, &isOnline, &allEOR)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -153,9 +126,11 @@ func (db *DB) GetRouter(ctx context.Context, routerID string) (*model.Router, er
 		return nil, err
 	}
 
-	displayName := routerID
-	if hostname != nil {
-		displayName = *hostname
+	name := routerID
+	if displayName != nil {
+		name = *displayName
+	} else if hostname != nil {
+		name = *hostname
 	}
 
 	status := "down"
@@ -182,9 +157,10 @@ func (db *DB) GetRouter(ctx context.Context, routerID string) (*model.Router, er
 		ID:          routerID,
 		RouterIP:    ipStr,
 		Hostname:    hostname,
-		DisplayName: displayName,
+		DisplayName: name,
 		ASNumber:    asNumber,
 		Description: description,
+		Location:    location,
 		Status:      status,
 		EORReceived: allEOR,
 		FirstSeen:   fs,
@@ -192,23 +168,141 @@ func (db *DB) GetRouter(ctx context.Context, routerID string) (*model.Router, er
 	}, nil
 }
 
+// GetRouterDetail returns a router with routing table statistics.
+func (db *DB) GetRouterDetail(ctx context.Context, routerID string) (*model.RouterDetail, error) {
+	var (
+		routerIP     *net.IP
+		hostname     *string
+		asNumber     *int64
+		description  *string
+		displayName  *string
+		location     *string
+		firstSeen    *time.Time
+		lastSeen     *time.Time
+		isOnline     bool
+		allEOR       bool
+		sessionStart  *time.Time
+		syncUpdatedAt *time.Time
+		routeCount    int64
+		avgASPathLen  *float64
+		uniquePfx    int64
+		peerCount    int64
+		ipv4Routes   int64
+		ipv6Routes   int64
+	)
+	err := db.Pool.QueryRow(ctx, `
+		WITH stats AS (
+			SELECT
+				COUNT(*) AS route_count,
+				COUNT(DISTINCT prefix) AS unique_prefixes,
+				COUNT(DISTINCT nexthop) AS peer_count,
+				COUNT(*) FILTER (WHERE afi = 4) AS ipv4_routes,
+				COUNT(*) FILTER (WHERE afi = 6) AS ipv6_routes,
+				AVG(array_length(string_to_array(as_path, ' '), 1))
+					FILTER (WHERE as_path IS NOT NULL AND as_path != '') AS avg_as_path_len
+			FROM current_routes
+			WHERE router_id = $1
+		)
+		SELECT ro.router_ip, ro.hostname, ro.as_number, ro.description,
+		       ro.display_name, ro.location,
+		       ro.first_seen, ro.last_seen,
+		       ro.route_count > 0 OR ro.session_start_time IS NOT NULL AS is_online,
+		       COALESCE(ro.all_afis_synced, false) AS all_eor_received,
+		       ro.session_start_time, ro.sync_updated_at,
+		       s.route_count, s.unique_prefixes, s.peer_count,
+		       s.ipv4_routes, s.ipv6_routes, s.avg_as_path_len
+		FROM routers_overview ro
+		CROSS JOIN stats s
+		WHERE ro.router_id = $1
+	`, routerID).Scan(&routerIP, &hostname, &asNumber, &description,
+		&displayName, &location, &firstSeen, &lastSeen,
+		&isOnline, &allEOR, &sessionStart, &syncUpdatedAt,
+		&routeCount, &uniquePfx, &peerCount, &ipv4Routes, &ipv6Routes, &avgASPathLen)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	name := routerID
+	if displayName != nil {
+		name = *displayName
+	} else if hostname != nil {
+		name = *hostname
+	}
+
+	status := "down"
+	if isOnline {
+		status = "up"
+	}
+
+	var ipStr *string
+	if routerIP != nil {
+		s := routerIP.String()
+		ipStr = &s
+	}
+
+	fs := ""
+	if firstSeen != nil {
+		fs = model.FormatTime(*firstSeen)
+	}
+	ls := ""
+	if lastSeen != nil {
+		ls = model.FormatTime(*lastSeen)
+	}
+
+	var ss *string
+	if sessionStart != nil {
+		v := model.FormatTime(*sessionStart)
+		ss = &v
+	}
+
+	var sua *string
+	if syncUpdatedAt != nil {
+		v := model.FormatTime(*syncUpdatedAt)
+		sua = &v
+	}
+
+	return &model.RouterDetail{
+		Router: model.Router{
+			ID:          routerID,
+			RouterIP:    ipStr,
+			Hostname:    hostname,
+			DisplayName: name,
+			ASNumber:    asNumber,
+			Description: description,
+			Location:    location,
+			Status:      status,
+			EORReceived: allEOR,
+			FirstSeen:   fs,
+			LastSeen:    ls,
+		},
+		SessionStart:   ss,
+		SyncUpdatedAt:  sua,
+		RouteCount:     routeCount,
+		UniquePrefixes: uniquePfx,
+		PeerCount:      peerCount,
+		IPv4Routes:     ipv4Routes,
+		IPv6Routes:     ipv6Routes,
+		AvgASPathLen:   avgASPathLen,
+	}, nil
+}
+
 // GetRouterSummary returns minimal router info for embedding in responses.
 func (db *DB) GetRouterSummary(ctx context.Context, routerID string) (*model.RouterSummary, string, error) {
 	var (
-		hostname *string
-		asNumber *int64
-		isOnline bool
+		hostname    *string
+		displayName *string
+		asNumber    *int64
+		isOnline    bool
 	)
 	err := db.Pool.QueryRow(ctx, `
-		SELECT r.hostname, r.as_number,
-		       EXISTS(SELECT 1 FROM rib_sync_status s WHERE s.router_id = $1) AS is_online
-		FROM (SELECT $1 AS router_id) AS q
-		LEFT JOIN routers r ON r.router_id = q.router_id
-		WHERE r.router_id IS NOT NULL
-		   OR EXISTS(SELECT 1 FROM rib_sync_status s WHERE s.router_id = $1)
-		   OR EXISTS(SELECT 1 FROM current_routes cr WHERE cr.router_id = $1 LIMIT 1)
-		   OR EXISTS(SELECT 1 FROM route_events re WHERE re.router_id = $1 LIMIT 1)
-	`, routerID).Scan(&hostname, &asNumber, &isOnline)
+		SELECT hostname, display_name, as_number,
+		       route_count > 0 OR session_start_time IS NOT NULL AS is_online
+		FROM routers_overview
+		WHERE router_id = $1
+	`, routerID).Scan(&hostname, &displayName, &asNumber, &isOnline)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", nil
@@ -216,9 +310,11 @@ func (db *DB) GetRouterSummary(ctx context.Context, routerID string) (*model.Rou
 		return nil, "", err
 	}
 
-	displayName := routerID
-	if hostname != nil {
-		displayName = *hostname
+	name := routerID
+	if displayName != nil {
+		name = *displayName
+	} else if hostname != nil {
+		name = *hostname
 	}
 
 	status := "down"
@@ -228,7 +324,7 @@ func (db *DB) GetRouterSummary(ctx context.Context, routerID string) (*model.Rou
 
 	return &model.RouterSummary{
 		ID:          routerID,
-		DisplayName: displayName,
+		DisplayName: name,
 		ASNumber:    asNumber,
 	}, status, nil
 }

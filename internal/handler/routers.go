@@ -20,11 +20,11 @@ func HandleListRouters(db *store.DB) http.HandlerFunc {
 	}
 }
 
-// HandleGetRouter returns a single router by ID.
+// HandleGetRouter returns a single router by ID with routing statistics.
 func HandleGetRouter(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		routerID := r.PathValue("routerId")
-		router, err := db.GetRouter(r.Context(), routerID)
+		router, err := db.GetRouterDetail(r.Context(), routerID)
 		if err != nil {
 			model.WriteProblem(w, http.StatusInternalServerError, "Failed to query router.")
 			return
@@ -34,7 +34,7 @@ func HandleGetRouter(db *store.DB) http.HandlerFunc {
 			return
 		}
 		json.NewEncoder(w).Encode(struct {
-			Data *model.Router `json:"data"`
+			Data *model.RouterDetail `json:"data"`
 		}{Data: router})
 	}
 }
