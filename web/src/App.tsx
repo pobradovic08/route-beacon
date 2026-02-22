@@ -10,8 +10,10 @@ import {
   IconWorldSearch,
   IconPingPong,
   IconArrowsShuffle,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import { TargetSelector } from "./components/TargetSelector";
+import { SummaryPanel } from "./components/SummaryPanel";
 import { RouteLookup } from "./components/RouteLookup";
 import { PingPanel } from "./components/PingPanel";
 import { TraceroutePanel } from "./components/TraceroutePanel";
@@ -23,7 +25,7 @@ export default function App() {
   const { health, error: healthError } = useHealth();
   const { targets, loading: targetsLoading } = useTargets();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string | null>("routes");
+  const [activeTab, setActiveTab] = useState<string | null>("summary");
 
   return (
     <Box maw={960} mx="auto" px="xl" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -163,6 +165,12 @@ export default function App() {
             >
               <Tabs.List>
                 <Tabs.Tab
+                  value="summary"
+                  leftSection={<IconInfoCircle size={16} />}
+                >
+                  Summary
+                </Tabs.Tab>
+                <Tabs.Tab
                   value="routes"
                   leftSection={<IconWorldSearch size={16} />}
                 >
@@ -185,6 +193,10 @@ export default function App() {
                   Traceroute
                 </Tabs.Tab>
               </Tabs.List>
+
+              <Tabs.Panel value="summary">
+                <SummaryPanel targetId={selectedTarget} />
+              </Tabs.Panel>
 
               <Tabs.Panel value="routes">
                 <RouteLookup targetId={selectedTarget} />

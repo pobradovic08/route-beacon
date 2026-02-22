@@ -16,7 +16,7 @@ export function TargetSelector({
 }: TargetSelectorProps) {
   const data = targets.map((t) => ({
     value: t.id,
-    label: t.asn != null ? `${t.display_name} — AS${t.asn}` : t.display_name,
+    label: t.display_name,
   }));
 
   return (
@@ -25,9 +25,9 @@ export function TargetSelector({
       data={data}
       value={value}
       onChange={onChange}
-      searchable
       clearable
       disabled={loading}
+      styles={{ input: { cursor: "pointer" } }}
       renderOption={({ option }) => {
         const target = targets.find((t) => t.id === option.value);
         const dotColor =
@@ -51,14 +51,20 @@ export function TargetSelector({
               <Text size="sm" fw={500} style={{ color: "var(--rb-text)" }}>
                 {target?.display_name}
               </Text>
-              <Text
-                size="xs"
-                fw={500}
-                ff="monospace"
-                style={{ color: "var(--rb-text-secondary)" }}
-              >
-                {target?.asn != null ? `AS${target.asn}` : "Unknown ASN"} · {target?.collector.location}
-              </Text>
+              {(target?.asn != null || target?.location) && (
+                <Text
+                  size="xs"
+                  fw={500}
+                  style={{ color: "var(--rb-text-secondary)" }}
+                >
+                  {[
+                    target?.asn != null ? `AS${target.asn}` : null,
+                    target?.location,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+              )}
             </div>
           </Group>
         );

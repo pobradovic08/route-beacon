@@ -3,11 +3,11 @@
 -- Inserted by PostgreSQL init after schema creation.
 
 -- Routers
-INSERT INTO routers (router_id, router_ip, hostname, as_number, description, first_seen, last_seen)
+INSERT INTO routers (router_id, router_ip, hostname, as_number, description, display_name, location, first_seen, last_seen)
 VALUES
-    ('10.0.0.2', '172.28.0.10', 'bgp-router1', 65001, 'ISP Alpha core router', now() - interval '30 days', now()),
-    ('10.0.0.3', '172.28.0.11', 'bgp-router2', 65002, 'ISP Beta edge router', now() - interval '15 days', now()),
-    ('10.0.0.4', '172.28.0.12', NULL, 65003, 'IX peering router', now() - interval '7 days', now() - interval '2 hours');
+    ('10.0.0.2', '172.28.0.10', 'bgp-router1', 65001, 'ISP Alpha core router', 'Alpha Core', 'Frankfurt, DE', now() - interval '30 days', now()),
+    ('10.0.0.3', '172.28.0.11', 'bgp-router2', 65002, 'ISP Beta edge router', 'Beta Edge', 'Amsterdam, NL', now() - interval '15 days', now()),
+    ('10.0.0.4', '172.28.0.12', NULL, 65003, 'IX peering router', NULL, NULL, now() - interval '7 days', now() - interval '2 hours');
 
 -- RIB sync status (router1 and router2 are online; router3 is offline — no rows)
 INSERT INTO rib_sync_status (router_id, table_name, afi, eor_seen, eor_time, session_start_time, updated_at)
