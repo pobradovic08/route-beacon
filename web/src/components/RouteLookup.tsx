@@ -5,6 +5,7 @@ import {
   TextInput,
   Button,
   Text,
+  Title,
   Card,
   Badge,
   Alert,
@@ -13,6 +14,7 @@ import {
   ActionIcon,
   Loader,
   Box,
+  SimpleGrid,
   Table,
 } from "@mantine/core";
 import {
@@ -22,6 +24,9 @@ import {
   IconAlertTriangle,
   IconChevronDown,
   IconChevronUp,
+  IconShieldCheck,
+  IconShieldQuestion,
+  IconShieldX,
 } from "@tabler/icons-react";
 import { api, ApiError } from "../api/client";
 import type { RouteLookupResponse, RoutePath } from "../api/types";
@@ -30,10 +35,10 @@ interface RouteLookupProps {
   targetId: string | null;
 }
 
-const cardStyle = {
-  border: "1px solid var(--rb-border)",
-  boxShadow: "var(--rb-shadow-sm)",
-  background: "var(--rb-surface)",
+const cardStyle: React.CSSProperties = {
+  border: "none",
+  borderRadius: "var(--rb-radius)",
+  boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
 };
 
 export function RouteLookup({ targetId }: RouteLookupProps) {
@@ -76,29 +81,31 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
       <Text size="xs" fw={400} style={{ color: "var(--rb-muted)" }}>
         Enter a CIDR prefix (e.g. 192.0.2.0/24) for an exact match, or a bare IP address (e.g. 198.51.100.1) for the longest prefix match.
       </Text>
-      <Group gap="sm" align="flex-end">
-        <TextInput
-          placeholder="192.0.2.0/24 or 2001:db8::1"
-          label="Prefix / IP"
-          value={prefix}
-          onChange={(e) => setPrefix(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          disabled={!targetId}
-          style={{ flex: 1 }}
-          styles={{
-            input: { fontFamily: "var(--mantine-font-family-monospace)" },
-          }}
-        />
-        <Button
-          onClick={handleSearch}
-          loading={loading}
-          disabled={!targetId || !prefix.trim()}
-          leftSection={!loading && <IconSearch size={16} />}
-          w={120}
-        >
-          Lookup
-        </Button>
-      </Group>
+      <Stack gap={12}>
+        <Title order={4}>Prefix / IP</Title>
+        <Group gap="sm" align="flex-end">
+          <TextInput
+            placeholder="192.0.2.0/24 or 2001:db8::1"
+            value={prefix}
+            onChange={(e) => setPrefix(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            disabled={!targetId}
+            style={{ flex: 1 }}
+            styles={{
+              input: { fontFamily: "var(--mantine-font-family-monospace)" },
+            }}
+          />
+          <Button
+            onClick={handleSearch}
+            loading={loading}
+            disabled={!targetId || !prefix.trim()}
+            leftSection={!loading && <IconSearch size={16} />}
+            w={120}
+          >
+            Lookup
+          </Button>
+        </Group>
+      </Stack>
 
       {error && (
         <Alert
@@ -122,7 +129,21 @@ export function RouteLookup({ targetId }: RouteLookupProps) {
         </Group>
       )}
 
-      {result && <RouteResult result={result} />}
+      {result && (
+        <Stack gap={12}>
+          <Group justify="space-between" align="center">
+            <Title order={4}>
+              {result.paths.length === 1 ? "Selected route" : "Selected routes"}
+            </Title>
+            <Text size="xs" fw={500} style={{ color: "var(--rb-muted)" }}>
+              {result.paths.length} path{result.paths.length !== 1 ? "s" : ""}
+              {" · "}updated{" "}
+              {new Date(result.meta.data_updated_at).toLocaleTimeString()}
+            </Text>
+          </Group>
+          <RouteResult result={result} />
+        </Stack>
+      )}
     </Stack>
   );
 }
@@ -137,27 +158,6 @@ function RouteResult({ result }: { result: RouteLookupResponse }) {
   return (
     <Card padding="md" style={cardStyle}>
       <Stack gap="md">
-        <Group gap="sm" justify="space-between" align="center">
-          <Group gap="sm">
-            <Text size="sm" fw={600} ff="monospace">
-              {result.prefix}
-            </Text>
-            <Badge size="sm" variant="light" color="blue">
-              {result.meta.match_type}
-            </Badge>
-            {result.meta.stale && (
-              <Badge size="sm" variant="light" color="yellow">
-                stale
-              </Badge>
-            )}
-          </Group>
-          <Text size="xs" fw={500} style={{ color: "var(--rb-muted)" }}>
-            {result.paths.length} path{result.paths.length !== 1 ? "s" : ""}
-            {" · "}updated{" "}
-            {new Date(result.meta.data_updated_at).toLocaleTimeString()}
-          </Text>
-        </Group>
-
         {result.paths.length === 0 ? (
           <Text
             size="sm"
@@ -190,7 +190,8 @@ function RouteResult({ result }: { result: RouteLookupResponse }) {
           >
             <Table.Thead>
               <Table.Tr>
-                <Table.Th style={{ width: 48 }}>Status</Table.Th>
+                <Table.Th style={{ width: 16, paddingLeft: 0, paddingRight: 0 }}>ROA</Table.Th>
+                <Table.Th>Prefix</Table.Th>
                 <Table.Th>Next Hop</Table.Th>
                 <Table.Th>AS Path</Table.Th>
                 <Table.Th style={{ width: 36 }} />
@@ -202,6 +203,8 @@ function RouteResult({ result }: { result: RouteLookupResponse }) {
                 return (
                   <PathRows
                     key={i}
+                    prefix={result.prefix}
+                    target={result.target}
                     path={path}
                     expanded={isExpanded}
                     onToggle={() => toggleRow(i)}
@@ -250,19 +253,89 @@ function StatusLegend() {
   );
 }
 
-function getStatusCodes(path: RoutePath): string {
-  const codes: string[] = [];
-  if (path.best) codes.push("B");
-  if (path.filtered) codes.push("F");
-  if (path.stale) codes.push("s");
-  return codes.length > 0 ? codes.join("") : "·";
+function collapseAsPath(segments: (number | number[])[]) {
+  const result: { label: string; count: number }[] = [];
+  for (const seg of segments) {
+    const label = Array.isArray(seg) ? `{${seg.join(",")}}` : String(seg);
+    const last = result[result.length - 1];
+    if (last && last.label === label) {
+      last.count++;
+    } else {
+      result.push({ label, count: 1 });
+    }
+  }
+  return result;
+}
+
+function isPrivateAsn(label: string): boolean {
+  const n = Number(label);
+  if (isNaN(n)) return false;
+  return (n >= 64512 && n <= 65534) || (n >= 4200000000 && n <= 4294967294);
+}
+
+function AsChevron({ label, first, last, count = 1 }: { label: string; first: boolean; last: boolean; count?: number }) {
+  const priv = isPrivateAsn(label);
+  const notch = 6;
+  const clipPath = first
+    ? `polygon(0 0, calc(100% - ${notch}px) 0, 100% 50%, calc(100% - ${notch}px) 100%, 0 100%)`
+    : last
+      ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${notch}px 50%)`
+      : `polygon(0 0, calc(100% - ${notch}px) 0, 100% 50%, calc(100% - ${notch}px) 100%, 0 100%, ${notch}px 50%)`;
+
+  return (
+    <Box
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        background: priv ? "rgba(139, 92, 246, 0.1)" : last ? "rgba(52, 199, 89, 0.12)" : count > 1 ? "rgba(255, 159, 10, 0.12)" : "rgba(0, 113, 227, 0.08)",
+        clipPath,
+        marginLeft: first ? 0 : -1,
+        borderLeft: first ? `2px solid ${priv ? "#8b5cf6" : "var(--rb-accent)"}` : undefined,
+        borderRight: last ? `2px solid ${priv ? "#8b5cf6" : "#34c759"}` : undefined,
+      }}
+    >
+      <Box style={{
+        paddingLeft: first ? 6 : notch + 4,
+        paddingRight: count > 1 ? 4 : (last ? 6 : notch + 4),
+        paddingTop: 2,
+        paddingBottom: 2,
+      }}>
+        <Text size="xs" fw={600} ff="monospace" style={{ color: priv ? "#6d28d9" : last ? "#15803d" : first ? "#1d4ed8" : count > 1 ? "#c2410c" : "#1e40af", lineHeight: 1 }}>
+          {label}
+        </Text>
+      </Box>
+      {count > 1 && (
+        <Box style={{
+          background: "rgba(255, 159, 10, 0.2)",
+          paddingLeft: 4,
+          paddingRight: last ? 6 : notch + 4,
+          paddingTop: 2,
+          paddingBottom: 2,
+        }}>
+          <Text size="xs" fw={600} ff="monospace" style={{ color: "#9a3412", lineHeight: 1 }}>
+            {count}x
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function RpkiIcon({ status }: { status?: string }) {
+  if (status === "valid") return <IconShieldCheck size={16} style={{ color: "var(--rb-success)" }} />;
+  if (status === "invalid") return <IconShieldX size={16} style={{ color: "var(--rb-danger)" }} />;
+  return <IconShieldQuestion size={16} style={{ color: "var(--rb-muted)" }} />;
 }
 
 function PathRows({
+  prefix,
+  target,
   path,
   expanded,
   onToggle,
 }: {
+  prefix: string;
+  target: { id: string; display_name: string; asn: number | null };
   path: RoutePath;
   expanded: boolean;
   onToggle: () => void;
@@ -293,27 +366,40 @@ function PathRows({
           e.currentTarget.style.background = "";
         }}
       >
+        <Table.Td style={{ paddingLeft: 0, paddingRight: 0 }}>
+          <Group justify="center" align="center">
+            <RpkiIcon status={(path as RoutePath & { rpki_status?: string }).rpki_status} />
+          </Group>
+        </Table.Td>
         <Table.Td>
-          <Text size="sm" fw={700} ff="monospace" ta="center" style={{ color: path.filtered ? "var(--mantine-color-red-6)" : path.stale ? "var(--mantine-color-yellow-6)" : path.best ? "var(--mantine-color-green-7)" : "var(--rb-muted)" }}>
-            {getStatusCodes(path)}
+          <Text size="xs" fw={600} ff="monospace">
+            {prefix}
           </Text>
         </Table.Td>
         <Table.Td>
-          <Text size="sm" fw={500} ff="monospace">
+          <Text size="xs" fw={500} ff="monospace">
             {path.next_hop}
           </Text>
         </Table.Td>
         <Table.Td>
-          <Text size="sm" fw={500} ff="monospace" style={{ color: path.as_path.length === 0 ? "var(--rb-muted)" : undefined }}>
-            {asPathStr}
-          </Text>
+          {path.as_path.length === 0 ? (
+            <Text size="xs" fw={500} ff="monospace" style={{ color: "var(--rb-muted)" }}>(empty)</Text>
+          ) : (
+            <Group gap={0} wrap="wrap" style={{ rowGap: 4 }}>
+              {collapseAsPath(path.as_path).map((seg, i, arr) => (
+                <AsChevron key={i} label={seg.label} count={seg.count} first={i === 0} last={i === arr.length - 1} />
+              ))}
+            </Group>
+          )}
         </Table.Td>
         <Table.Td>
-          {expanded ? (
-            <IconChevronUp size={16} style={{ color: "var(--rb-muted)" }} />
-          ) : (
-            <IconChevronDown size={16} style={{ color: "var(--rb-muted)" }} />
-          )}
+          <Group justify="center" align="center">
+            {expanded ? (
+              <IconChevronUp size={16} style={{ color: "var(--rb-muted)" }} />
+            ) : (
+              <IconChevronDown size={16} style={{ color: "var(--rb-muted)" }} />
+            )}
+          </Group>
         </Table.Td>
       </Table.Tr>
 
@@ -321,65 +407,68 @@ function PathRows({
       {expanded && (
         <Table.Tr>
           <Table.Td
-            colSpan={4}
+            colSpan={5}
             style={{
-              background: "var(--rb-surface-raised, rgba(0,0,0,0.01))",
+              background: "rgba(0, 0, 0, 0.015)",
               borderBottom: "1px solid var(--rb-border)",
+              padding: 0,
             }}
           >
-            <Box px="sm" py="md">
-              <Stack gap="md">
-                {/* Detail attributes */}
-                <Group gap="xl" wrap="wrap">
-                  <Attr label="Metric (MED)" value={path.med != null ? String(path.med) : "—"} />
-                  <Attr label="Local Pref" value={path.local_pref != null ? String(path.local_pref) : "—"} />
-                  <Attr label="Weight" value="—" />
-                  <Attr label="Origin" value={path.origin.toUpperCase()} />
-                  <Attr label="RPKI" value="Not available" />
-                </Group>
+            <Box py={12} px={12}>
+              {/* Attribute grid */}
+              <SimpleGrid cols={5} spacing={12}>
+                <AttrCell label="MED" value={path.med != null ? String(path.med) : "—"} />
+                <AttrCell label="Local Pref" value={path.local_pref != null ? String(path.local_pref) : "—"} />
+                <AttrCell label="Weight" value="—" />
+                <AttrCell label="Origin" value={path.origin.toUpperCase()} />
+                <AttrCell label="RPKI" value="N/A" muted />
+              </SimpleGrid>
 
-                {/* Communities */}
-                {allCommunities.length > 0 && (
-                  <Group gap={4} wrap="wrap" align="center">
-                    <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
-                      Communities
-                    </Text>
+              {/* Communities */}
+              {allCommunities.length > 0 && (
+                <Box mt={12}>
+                  <Text size="xs" fw={600} mb={6} style={{ color: "var(--rb-muted)", letterSpacing: "0.03em" }}>
+                    Communities
+                  </Text>
+                  <Group gap={4} wrap="wrap">
                     {allCommunities.map((v, i) => (
-                      <Badge
+                      <Box
                         key={i}
-                        size="sm"
-                        variant="light"
-                        color="gray"
-                        ff="monospace"
-                        styles={{ label: { textTransform: "none", fontWeight: 500 } }}
+                        style={{
+                          background: "rgba(0, 0, 0, 0.04)",
+                          borderRadius: 4,
+                          padding: "2px 6px",
+                        }}
                       >
-                        {v}
-                      </Badge>
+                        <Text size="xs" fw={500} ff="monospace" style={{ color: "var(--rb-text)", lineHeight: 1.4 }}>
+                          {v}
+                        </Text>
+                      </Box>
                     ))}
                   </Group>
-                )}
+                </Box>
+              )}
 
-                {/* Copy button */}
-                <Group justify="flex-end">
-                  <CopyButton value={formatPathText(path)}>
-                    {({ copied, copy }) => (
-                      <Tooltip label={copied ? "Copied" : "Copy path"}>
-                        <ActionIcon
-                          variant="subtle"
-                          color={copied ? "blue" : "gray"}
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copy();
-                          }}
-                        >
-                          {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
-                  </CopyButton>
-                </Group>
-              </Stack>
+              {/* Copy */}
+              <Group justify="flex-end" mt={8}>
+                <CopyButton value={formatPathText(prefix, target, path)}>
+                  {({ copied, copy }) => (
+                    <Tooltip label={copied ? "Copied" : "Copy path"}>
+                      <ActionIcon
+                        variant="subtle"
+                        color={copied ? "blue" : "gray"}
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copy();
+                        }}
+                      >
+                        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+              </Group>
             </Box>
           </Table.Td>
         </Table.Tr>
@@ -388,21 +477,28 @@ function PathRows({
   );
 }
 
-function Attr({ label, value }: { label: string; value: string }) {
+function AttrCell({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
-    <Group gap={4} wrap="nowrap">
-      <Text size="xs" fw={600} style={{ color: "var(--rb-text-secondary)" }}>
+    <Box style={{
+      background: "rgba(0, 0, 0, 0.03)",
+      borderRadius: 6,
+      padding: "6px 10px",
+    }}>
+      <Text size="xs" fw={600} style={{ color: "var(--rb-muted)", lineHeight: 1, letterSpacing: "0.03em" }}>
         {label}
       </Text>
-      <Text size="sm" fw={500} ff="monospace">
+      <Text size="sm" fw={700} ff="monospace" mt={2} style={{ color: muted ? "var(--rb-muted)" : "var(--rb-text)", lineHeight: 1 }}>
         {value}
       </Text>
-    </Group>
+    </Box>
   );
 }
 
-function formatPathText(path: RoutePath): string {
+function formatPathText(prefix: string, target: { display_name: string; asn: number | null }, path: RoutePath): string {
   const lines: string[] = [];
+  const router = target.asn != null ? `${target.display_name} (AS${target.asn})` : target.display_name;
+  lines.push(`Router: ${router}`);
+  lines.push(`Prefix: ${prefix}`);
   lines.push(`Next Hop: ${path.next_hop}`);
   lines.push(`AS Path: ${path.as_path.map((seg) => Array.isArray(seg) ? `{${seg.join(",")}}` : String(seg)).join(" ")}`);
   lines.push(`Origin: ${path.origin}`);

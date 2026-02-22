@@ -15,9 +15,6 @@
   --rb-shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.08);
   --rb-radius: 12px;
   --rb-dot: 9px;
-  --rb-glass: rgba(255, 255, 255, 0.6);
-  --rb-glass-border: rgba(255, 255, 255, 0.3);
-  --rb-glass-blur: 12px;
 }
 
 *,
