@@ -3,9 +3,10 @@ import {
   Stack,
   Group,
   Text,
-  Card,
   SimpleGrid,
   Box,
+  Badge,
+  Tooltip,
   Loader,
   Alert,
 } from "@mantine/core";
@@ -17,39 +18,45 @@ interface SummaryPanelProps {
   targetId: string | null;
 }
 
-const cardStyle = {
-  border: "1px solid var(--rb-border)",
-  boxShadow: "var(--rb-shadow-sm)",
-  background: "var(--rb-surface)",
+/* ── card styles ───────────────────────────────────────── */
+const cardStyle: React.CSSProperties = {
+  border: "none",
+  borderRadius: "var(--rb-radius)",
+  boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+  padding: 16,
 };
 
+const identityStyle: React.CSSProperties = {
+  ...cardStyle,
+  padding: 20,
+};
+
+function timeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/* ── sub-components ────────────────────────────────────── */
 function Stat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <Box>
-      <Text size="xs" fw={600} tt="uppercase" lts="0.05em" style={{ color: "var(--rb-muted)" }}>
+      <Text size="xs" fw={600} lts="0.03em" style={{ color: "var(--rb-muted)" }}>
         {label}
       </Text>
-      <Text size="lg" fw={700} ff={mono ? "monospace" : undefined} style={{ color: "var(--rb-text)" }}>
+      <Text size="xl" fw={700} ff={mono ? "monospace" : undefined} style={{ color: "var(--rb-text)" }}>
         {value}
       </Text>
     </Box>
   );
 }
 
-function Dot({ color }: { color: string }) {
-  return (
-    <Box
-      style={{
-        width: 10,
-        height: 10,
-        borderRadius: "50%",
-        background: color,
-        flexShrink: 0,
-      }}
-    />
-  );
-}
-
+/* ── main component ────────────────────────────────────── */
 export function SummaryPanel({ targetId }: SummaryPanelProps) {
   const [detail, setDetail] = useState<RouterDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,9 +98,8 @@ export function SummaryPanel({ targetId }: SummaryPanelProps) {
 
   if (!detail) return null;
 
-  const statusColor = detail.status === "up" ? "var(--rb-success)" : "var(--rb-danger)";
   const statusLabel = detail.status === "up" ? "Online" : "Offline";
-  const syncLabel = detail.eor_received ? "Complete" : "In progress";
+  const syncLabel = detail.eor_received ? "RIB Synchronized" : "RIB Synchronizing";
   const infoLine = [
     detail.as_number != null ? `AS${detail.as_number}` : null,
     detail.location,
@@ -102,7 +108,7 @@ export function SummaryPanel({ targetId }: SummaryPanelProps) {
   return (
     <Stack gap="lg">
       {/* Router identity */}
-      <Card padding="md" style={cardStyle}>
+      <Box style={identityStyle}>
         <Group justify="space-between" align="center">
           <Box>
             <Text size="lg" fw={700} style={{ color: "var(--rb-text)" }}>
@@ -113,75 +119,53 @@ export function SummaryPanel({ targetId }: SummaryPanelProps) {
                 {infoLine}
               </Text>
             )}
+            {detail.sync_updated_at && (
+              <Text size="xs" fw={500} mt={12} style={{ color: "var(--rb-muted)" }}>
+                Last Update:{" "}
+                <Tooltip label={new Date(detail.sync_updated_at).toLocaleString()} withArrow position="bottom" fz="xs">
+                  <Text span size="xs" fw={500} ff="monospace" td="underline" style={{ color: "var(--rb-text-secondary)", cursor: "default" }}>
+                    {timeAgo(new Date(detail.sync_updated_at))}
+                  </Text>
+                </Tooltip>
+              </Text>
+            )}
           </Box>
-          <Group gap={6}>
-            <Dot color={statusColor} />
-            <Text size="sm" fw={600} style={{ color: statusColor }}>
+          <Stack gap={6} align="flex-end">
+            <Badge variant="light" color={detail.status === "up" ? "green" : "red"} size="sm">
               {statusLabel}
-            </Text>
-          </Group>
+            </Badge>
+            <Badge variant="light" color={detail.eor_received ? "green" : "yellow"} size="sm">
+              {syncLabel}
+            </Badge>
+          </Stack>
         </Group>
-      </Card>
+      </Box>
 
       {/* Stats grid */}
       <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md">
-        <Card padding="md" style={cardStyle}>
+        <Box style={cardStyle}>
           <Stat label="Total Routes" value={detail.route_count.toLocaleString()} mono />
-        </Card>
-        <Card padding="md" style={cardStyle}>
+        </Box>
+        <Box style={cardStyle}>
           <Stat label="Unique Prefixes" value={detail.unique_prefixes.toLocaleString()} mono />
-        </Card>
-        <Card padding="md" style={cardStyle}>
+        </Box>
+        <Box style={cardStyle}>
           <Stat label="Peers" value={detail.peer_count.toLocaleString()} mono />
-        </Card>
-        <Card padding="md" style={cardStyle}>
+        </Box>
+        <Box style={cardStyle}>
           <Stat label="IPv4 Routes" value={detail.ipv4_routes.toLocaleString()} mono />
-        </Card>
-        <Card padding="md" style={cardStyle}>
+        </Box>
+        <Box style={cardStyle}>
           <Stat label="IPv6 Routes" value={detail.ipv6_routes.toLocaleString()} mono />
-        </Card>
-        <Card padding="md" style={cardStyle}>
+        </Box>
+        <Box style={cardStyle}>
           <Stat
             label="Avg AS Path"
             value={detail.avg_as_path_len != null ? detail.avg_as_path_len.toFixed(1) : "—"}
             mono
           />
-        </Card>
+        </Box>
       </SimpleGrid>
-
-      {/* Sync status */}
-      <Card padding="md" style={cardStyle}>
-        <Group gap="xl">
-          <Group gap={6}>
-            <Text size="xs" fw={600} tt="uppercase" lts="0.05em" style={{ color: "var(--rb-muted)" }}>
-              RIB Sync
-            </Text>
-            <Text size="sm" fw={600} style={{ color: detail.eor_received ? "var(--rb-success)" : "var(--rb-warning)" }}>
-              {syncLabel}
-            </Text>
-          </Group>
-          {detail.first_seen && (
-            <Group gap={6}>
-              <Text size="xs" fw={600} tt="uppercase" lts="0.05em" style={{ color: "var(--rb-muted)" }}>
-                First Seen
-              </Text>
-              <Text size="sm" fw={500} ff="monospace" style={{ color: "var(--rb-text-secondary)" }}>
-                {new Date(detail.first_seen).toLocaleDateString()}
-              </Text>
-            </Group>
-          )}
-          {detail.sync_updated_at && (
-            <Group gap={6}>
-              <Text size="xs" fw={600} tt="uppercase" lts="0.05em" style={{ color: "var(--rb-muted)" }}>
-                Last Update
-              </Text>
-              <Text size="sm" fw={500} ff="monospace" style={{ color: "var(--rb-text-secondary)" }}>
-                {new Date(detail.sync_updated_at).toLocaleString()}
-              </Text>
-            </Group>
-          )}
-        </Group>
-      </Card>
     </Stack>
   );
 }
