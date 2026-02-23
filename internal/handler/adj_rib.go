@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -117,7 +118,9 @@ func HandleAdjRibInLookup(db *store.DB) http.HandlerFunc {
 			},
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("adj-rib-in lookup: failed to encode response: %v", err)
+		}
 	}
 }
 
@@ -127,10 +130,23 @@ func HandleAdjRibInHistory(db *store.DB) http.HandlerFunc {
 		routerID := r.PathValue("routerId")
 
 		prefix := r.URL.Query().Get("prefix")
+		policy := r.URL.Query().Get("policy")
+
 		if prefix == "" {
 			model.WriteProblemWithParams(w, http.StatusUnprocessableEntity,
 				"Request validation failed.",
 				[]model.InvalidParam{{Name: "prefix", Reason: "prefix query parameter is required."}})
+			return
+		}
+
+		// Default policy
+		if policy == "" {
+			policy = "both"
+		}
+		if policy != "pre" && policy != "post" && policy != "both" {
+			model.WriteProblemWithParams(w, http.StatusUnprocessableEntity,
+				"Request validation failed.",
+				[]model.InvalidParam{{Name: "policy", Reason: "Must be 'pre', 'post', or 'both'."}})
 			return
 		}
 
@@ -208,7 +224,7 @@ func HandleAdjRibInHistory(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		events, err := db.GetAdjRibInHistory(r.Context(), routerID, prefix, from, to, limit)
+		events, err := db.GetAdjRibInHistory(r.Context(), routerID, prefix, policy, from, to, limit)
 		if err != nil {
 			model.WriteProblem(w, http.StatusInternalServerError, "Failed to query route history.")
 			return
@@ -220,14 +236,16 @@ func HandleAdjRibInHistory(db *store.DB) http.HandlerFunc {
 		}
 
 		resp := model.AdjRibInRouteHistoryResponse{
-			RouterID: routerID,
-			Prefix:   prefix,
-			From:     model.FormatTime(from),
-			To:       model.FormatTime(to),
-			Events:   events,
-			HasMore:  hasMore,
+			Router:  *routerSummary,
+			Prefix:  prefix,
+			From:    model.FormatTime(from),
+			To:      model.FormatTime(to),
+			Events:  events,
+			HasMore: hasMore,
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("adj-rib-in history: failed to encode response: %v", err)
+		}
 	}
 }

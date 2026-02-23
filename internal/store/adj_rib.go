@@ -14,6 +14,8 @@ import (
 
 // AdjRibInExactLookup returns Adj-RIB-In routes matching the exact prefix
 // for a router, filtered by policy type.
+// Note: queries do not filter by peer — routes are returned across all peers.
+// If the ingester stores multiple peers per router, results are merged.
 func (db *DB) AdjRibInExactLookup(ctx context.Context, routerID, prefix, policy string) ([]model.AdjRibInRoute, error) {
 	query := `
 		SELECT prefix::text, path_id, is_post_policy, nexthop, as_path, origin,
@@ -39,6 +41,8 @@ func (db *DB) AdjRibInExactLookup(ctx context.Context, routerID, prefix, policy 
 
 // AdjRibInLPMLookup returns Adj-RIB-In routes matching the longest prefix
 // for a bare IP address on a specific router.
+// Note: queries do not filter by peer — routes are returned across all peers.
+// If the ingester stores multiple peers per router, results are merged.
 func (db *DB) AdjRibInLPMLookup(ctx context.Context, routerID, ip, policy string) ([]model.AdjRibInRoute, error) {
 	query := `
 		WITH lpm AS (
@@ -61,7 +65,7 @@ func (db *DB) AdjRibInLPMLookup(ctx context.Context, routerID, ip, policy string
 		JOIN lpm ON ar.prefix = lpm.prefix
 		WHERE ar.router_id = $1`
 
-	query += policyFilter(policy, nil) // reuse same param number
+	query += policyFilter(policy, nil) // use hardcoded boolean (no new query parameter needed)
 	query += `
 		ORDER BY ar.is_post_policy, ar.path_id`
 
@@ -171,13 +175,13 @@ func scanAdjRibInRoutes(rows interface {
 
 // GroupAdjRibInPaths groups flat Adj-RIB-In routes by path_id into a nested
 // structure with optional pre- and post-policy attribute objects.
+//
+// The path_id comes from RFC 7911 (ADD-PATH) and is preserved by the BMP
+// ingester. Each unique path_id may have both a pre-policy and post-policy
+// row in adj_rib_in; this function merges them into a single AdjRibInPath
+// so the API consumer sees one object per advertised path.
 func GroupAdjRibInPaths(routes []model.AdjRibInRoute) []model.AdjRibInPath {
-	type pathIndex struct {
-		idx    int
-		pathID int64
-	}
-	var order []pathIndex
-	seen := map[int64]int{} // path_id → index in order
+	seen := map[int64]int{} // path_id → index in paths
 
 	paths := []model.AdjRibInPath{}
 	for _, r := range routes {
@@ -200,7 +204,6 @@ func GroupAdjRibInPaths(routes []model.AdjRibInRoute) []model.AdjRibInPath {
 		if !exists {
 			idx = len(paths)
 			seen[r.PathID] = idx
-			order = append(order, pathIndex{idx: idx, pathID: r.PathID})
 			paths = append(paths, model.AdjRibInPath{PathID: r.PathID})
 		}
 
@@ -224,11 +227,7 @@ func GenerateAdjRibInPlainText(prefix, routerID string, paths []model.AdjRibInPa
 	fmt.Fprintf(&b, "%d path(s) available\n\n", len(paths))
 
 	for i, p := range paths {
-		fmt.Fprintf(&b, "Path #%d (path_id %d)", i+1, p.PathID)
-		if p.PathID == 0 {
-			b.WriteString(" (best)")
-		}
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "Path #%d (path_id %d)\n", i+1, p.PathID)
 
 		writeAttrs := func(label string, a *model.AdjRibInRouteAttrs) {
 			if a == nil {
@@ -293,19 +292,27 @@ func formatASPath(asPath []any) string {
 	return strings.Join(parts, " ")
 }
 
-// GetAdjRibInHistory returns historical route events for a prefix.
-func (db *DB) GetAdjRibInHistory(ctx context.Context, routerID, prefix string, from, to time.Time, limit int) ([]model.AdjRibInRouteEvent, error) {
-	rows, err := db.Pool.Query(ctx, `
-		SELECT ingest_time, action, prefix::text, path_id, COALESCE(is_post_policy, false),
+// GetAdjRibInHistory returns historical route events for a prefix,
+// scoped to Adj-RIB-In events (where is_post_policy IS NOT NULL).
+func (db *DB) GetAdjRibInHistory(ctx context.Context, routerID, prefix, policy string, from, to time.Time, limit int) ([]model.AdjRibInRouteEvent, error) {
+	query := `
+		SELECT ingest_time, action, prefix::text, path_id, is_post_policy,
 		       nexthop, as_path, origin, localpref, med, origin_asn,
 		       communities_std, communities_ext, communities_large
 		FROM route_events
 		WHERE router_id = $1
 		  AND prefix = $2::cidr
 		  AND ingest_time BETWEEN $3 AND $4
+		  AND is_post_policy IS NOT NULL`
+
+	args := []any{routerID, prefix, from, to}
+	query += policyFilter(policy, &args)
+	args = append(args, limit+1)
+	query += fmt.Sprintf(`
 		ORDER BY ingest_time DESC
-		LIMIT $5
-	`, routerID, prefix, from, to, limit+1)
+		LIMIT $%d`, len(args))
+
+	rows, err := db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

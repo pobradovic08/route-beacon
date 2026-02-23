@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -99,6 +100,8 @@ func HandleLookupRoutes(db *store.DB) http.HandlerFunc {
 			},
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("route lookup: failed to encode response: %v", err)
+		}
 	}
 }

@@ -55,10 +55,10 @@ type AdjRibInRouteEvent struct {
 
 // AdjRibInRouteHistoryResponse is the response for Adj-RIB-In route history.
 type AdjRibInRouteHistoryResponse struct {
-	RouterID string               `json:"router_id"`
-	Prefix   string               `json:"prefix"`
-	From     string               `json:"from"`
-	To       string               `json:"to"`
-	Events   []AdjRibInRouteEvent `json:"events"`
-	HasMore  bool                 `json:"has_more"`
+	Router  RouterSummary        `json:"router"`
+	Prefix  string               `json:"prefix"`
+	From    string               `json:"from"`
+	To      string               `json:"to"`
+	Events  []AdjRibInRouteEvent `json:"events"`
+	HasMore bool                 `json:"has_more"`
 }

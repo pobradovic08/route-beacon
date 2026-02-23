@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -118,6 +119,8 @@ func HandleGetRouteHistory(db *store.DB) http.HandlerFunc {
 			HasMore:  hasMore,
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("route history: failed to encode response: %v", err)
+		}
 	}
 }

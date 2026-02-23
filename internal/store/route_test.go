@@ -123,7 +123,7 @@ func TestGeneratePlainText_NoRoutes(t *testing.T) {
 	}
 }
 
-func TestGeneratePlainText_BestPath(t *testing.T) {
+func TestGeneratePlainText_MultiplePaths(t *testing.T) {
 	nh := "192.0.2.1"
 	origin := "igp"
 	routes := []model.Route{
@@ -144,13 +144,15 @@ func TestGeneratePlainText_BestPath(t *testing.T) {
 	}
 	result := GeneratePlainText("10.0.0.0/24", "router1", routes)
 
-	// Path #1 with path_id=0 should be marked best even with multiple paths
-	if !contains(result, "Path #1 (best)") {
-		t.Fatalf("expected Path #1 to be marked as best, got:\n%s", result)
+	// Path #1 should NOT have a "(best)" label
+	if contains(result, "(best)") {
+		t.Fatalf("expected no (best) label, got:\n%s", result)
 	}
-	// Path #2 should NOT be marked best
-	if contains(result, "Path #2 (best)") {
-		t.Fatalf("Path #2 should not be marked as best, got:\n%s", result)
+	if !contains(result, "Path #1\n") {
+		t.Fatalf("expected 'Path #1\\n', got:\n%s", result)
+	}
+	if !contains(result, "Path #2\n") {
+		t.Fatalf("expected 'Path #2\\n', got:\n%s", result)
 	}
 }
 

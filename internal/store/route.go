@@ -197,41 +197,13 @@ func GeneratePlainText(prefix string, routerID string, routes []model.Route) str
 	fmt.Fprintf(&b, "%d path(s) available\n\n", len(routes))
 
 	for i, r := range routes {
-		fmt.Fprintf(&b, "Path #%d", i+1)
-		if r.PathID == 0 {
-			b.WriteString(" (best)")
-		}
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "Path #%d\n", i+1)
 
 		if r.NextHop != nil {
 			fmt.Fprintf(&b, "  Next Hop: %s\n", *r.NextHop)
 		}
 
-		asPathParts := make([]string, len(r.ASPath))
-		for j, a := range r.ASPath {
-			switch v := a.(type) {
-			case int:
-				asPathParts[j] = strconv.Itoa(v)
-			case float64:
-				asPathParts[j] = strconv.Itoa(int(v))
-			case []any:
-				nums := make([]string, len(v))
-				for k, n := range v {
-					switch nn := n.(type) {
-					case int:
-						nums[k] = strconv.Itoa(nn)
-					case float64:
-						nums[k] = strconv.Itoa(int(nn))
-					default:
-						nums[k] = fmt.Sprintf("%v", nn)
-					}
-				}
-				asPathParts[j] = "{" + strings.Join(nums, ",") + "}"
-			default:
-				asPathParts[j] = fmt.Sprintf("%v", v)
-			}
-		}
-		fmt.Fprintf(&b, "  AS Path: %s\n", strings.Join(asPathParts, " "))
+		fmt.Fprintf(&b, "  AS Path: %s\n", formatASPath(r.ASPath))
 
 		if r.Origin != nil {
 			fmt.Fprintf(&b, "  Origin: %s\n", *r.Origin)
