@@ -183,12 +183,13 @@ func (db *DB) GetRouterDetail(ctx context.Context, routerID string) (*model.Rout
 		allEOR       bool
 		sessionStart  *time.Time
 		syncUpdatedAt *time.Time
-		routeCount    int64
-		avgASPathLen  *float64
-		uniquePfx    int64
-		peerCount    int64
-		ipv4Routes   int64
-		ipv6Routes   int64
+		routeCount         int64
+		avgASPathLen       *float64
+		uniquePfx          int64
+		peerCount          int64
+		ipv4Routes         int64
+		ipv6Routes         int64
+		adjRibInRouteCount int64
 	)
 	err := db.Pool.QueryRow(ctx, `
 		WITH stats AS (
@@ -210,14 +211,16 @@ func (db *DB) GetRouterDetail(ctx context.Context, routerID string) (*model.Rout
 		       COALESCE(ro.all_afis_synced, false) AS all_eor_received,
 		       ro.session_start_time, ro.sync_updated_at,
 		       s.route_count, s.unique_prefixes, s.peer_count,
-		       s.ipv4_routes, s.ipv6_routes, s.avg_as_path_len
+		       s.ipv4_routes, s.ipv6_routes, s.avg_as_path_len,
+		       COALESCE(ro.adj_rib_in_route_count, 0)
 		FROM routers_overview ro
 		CROSS JOIN stats s
 		WHERE ro.router_id = $1
 	`, routerID).Scan(&routerIP, &hostname, &asNumber, &description,
 		&displayName, &location, &firstSeen, &lastSeen,
 		&isOnline, &allEOR, &sessionStart, &syncUpdatedAt,
-		&routeCount, &uniquePfx, &peerCount, &ipv4Routes, &ipv6Routes, &avgASPathLen)
+		&routeCount, &uniquePfx, &peerCount, &ipv4Routes, &ipv6Routes, &avgASPathLen,
+		&adjRibInRouteCount)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -285,7 +288,8 @@ func (db *DB) GetRouterDetail(ctx context.Context, routerID string) (*model.Rout
 		PeerCount:      peerCount,
 		IPv4Routes:     ipv4Routes,
 		IPv6Routes:     ipv6Routes,
-		AvgASPathLen:   avgASPathLen,
+		AvgASPathLen:       avgASPathLen,
+		AdjRibInRouteCount: adjRibInRouteCount,
 	}, nil
 }
 

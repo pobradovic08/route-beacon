@@ -27,7 +27,8 @@ type RouterDetail struct {
 	PeerCount     int64    `json:"peer_count"`
 	IPv4Routes    int64    `json:"ipv4_routes"`
 	IPv6Routes    int64    `json:"ipv6_routes"`
-	AvgASPathLen  *float64 `json:"avg_as_path_len"`
+	AvgASPathLen       *float64 `json:"avg_as_path_len"`
+	AdjRibInRouteCount int64    `json:"adj_rib_in_route_count"`
 }
 
 // RouterListResponse wraps a list of routers.

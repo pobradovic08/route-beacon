@@ -40,6 +40,10 @@ func main() {
 	mux.HandleFunc("GET /api/v1/routers", handler.HandleListRouters(db))
 	mux.HandleFunc("GET /api/v1/routers/{routerId}", handler.HandleGetRouter(db))
 
+	// Adj-RIB-In
+	mux.HandleFunc("GET /api/v1/routers/{routerId}/adj-rib-in/lookup", handler.HandleAdjRibInLookup(db))
+	mux.HandleFunc("GET /api/v1/routers/{routerId}/adj-rib-in/history", handler.HandleAdjRibInHistory(db))
+
 	// Route lookup
 	mux.HandleFunc("GET /api/v1/routers/{routerId}/routes/lookup", handler.HandleLookupRoutes(db))
 
